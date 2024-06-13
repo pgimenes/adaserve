@@ -23,7 +23,8 @@ def test_autosharding():
     config.hidden_size = 96
     config.intermediate_size = 384
     config._attn_implementation = "eager"
-    config_sequence_length = 4
+    config_sequence_length = 128
+    config_batch_size = 16
 
     # Initialize model and MaseGraph
     model = BertModel(config)
@@ -34,7 +35,8 @@ def test_autosharding():
         mg,
         pass_args={
             "dummy_in": {
-                "input_ids": torch.randint(0, 10, (1, config_sequence_length)),
+                # "input_ids": torch.randint(0, 10, (1, config_sequence_length)),
+                "input_ids": torch.randn((config_batch_size, config_sequence_length, config.hidden_size)),
             },
             "add_value": False,
         },
@@ -58,7 +60,8 @@ def test_autosharding():
 
     # Launch model in distributed cluster
     launcher = MaseLauncher(mg, world_size=WORLD_SIZE, device_mesh=DEVICE_MESH)
-    inputs = [torch.randint(0, 10, (1, config_sequence_length))]
+    # inputs = [torch.randint(0, 10, (1, config_sequence_length))]
+    inputs = [torch.randn((config_batch_size, config_sequence_length, config.hidden_size))]
     launcher.run(module_map, inputs)
 
 
