@@ -24,7 +24,7 @@ def test_autosharding():
     config.intermediate_size = 384
     config._attn_implementation = "eager"
     config_sequence_length = 128
-    config_batch_size = 16
+    config_batch_size = 10 * 1024
 
     # Initialize model and MaseGraph
     model = BertModel(config)
@@ -36,7 +36,7 @@ def test_autosharding():
         pass_args={
             "dummy_in": {
                 # "input_ids": torch.randint(0, 10, (1, config_sequence_length)),
-                "input_ids": torch.randn((config_batch_size, config_sequence_length, config.hidden_size)),
+                "input_ids": torch.randn((1, config_sequence_length, config.hidden_size)),
             },
             "add_value": False,
         },
