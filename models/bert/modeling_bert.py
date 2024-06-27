@@ -179,13 +179,10 @@ class BertLinear(nn.Linear):
         if self.bias is None:
             return torch.bmm(input, self.weight.transpose(0, 1))
 
-            # if input.dim() < 3:
-            #     return torch.addmm(self.bias, input, self.weight.transpose(0, 1))
-            # else:
         return torch.baddbmm(
             self.bias,
             input,
-            self.weight.transpose(0, 1).expand(input.size(0), -1, -1),
+            torch.transpose(self.weight, 0, 1).expand(input.size(0), -1, -1),
         )
 
 

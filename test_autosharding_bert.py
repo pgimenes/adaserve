@@ -45,7 +45,7 @@ def test_autosharding():
                         (config_batch_size, config_sequence_length, config.hidden_size)
                     ),
                 },
-                "add_value": False,
+                "add_value": True,
             },
             "autosharding_analysis_pass": {
                 "mesh_shape": (2, 4),
