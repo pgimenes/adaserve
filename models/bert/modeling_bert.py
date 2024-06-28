@@ -456,9 +456,9 @@ class BertSelfAttention(nn.Module):
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        context_layer = context_layer.permute(0, 2, 1, 3)
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(new_context_layer_shape)
+        context_layer = context_layer.reshape(new_context_layer_shape)
 
         # outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
@@ -1417,12 +1417,12 @@ class BertLMHeadModel(BertPreTrainedModel):
         lm_loss = None
         if labels is not None:
             # we are doing next-token prediction; shift prediction scores and input ids by one
-            shifted_prediction_scores = prediction_scores[:, :-1, :].contiguous()
-            labels = labels[:, 1:].contiguous()
+            shifted_prediction_scores = prediction_scores[:, :-1, :]
+            labels = labels[:, 1:]
             loss_fct = CrossEntropyLoss()
             lm_loss = loss_fct(
-                shifted_prediction_scores.view(-1, self.config.vocab_size),
-                labels.view(-1),
+                torch.reshape(shifted_prediction_scores, (-1, self.config.vocab_size)),
+                torch.reshape(labels, (-1)),
             )
 
         if not return_dict:
