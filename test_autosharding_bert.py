@@ -16,12 +16,24 @@ logger.setLevel("DEBUG")
 WORLD_SIZE = 8
 DEVICE_MESH = [[0, 1, 2, 3], [4, 5, 6, 7]]
 
+import sys, pdb, traceback
+
+
+def excepthook(exc_type, exc_value, exc_traceback):
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    print("\nEntering debugger...")
+    pdb.post_mortem(exc_traceback)
+
+
+# Set the custom exception hook
+sys.excepthook = excepthook
+
 
 def test_autosharding():
 
     # Define config
     config = BertConfig()
-    config.num_hidden_layers = 3
+    config.num_hidden_layers = 1
     config.hidden_size = 96
     config.intermediate_size = 384
     config._attn_implementation = "eager"
@@ -51,6 +63,7 @@ def test_autosharding():
                 "mesh_shape": (2, 4),
                 "inter_node_bandwidth": 10e9,
                 "intra_node_bandwidth": 100e9,
+                "skip_fully_replicated": True,
             },
             "resharding_transform_pass": {
                 "device_mesh": DEVICE_MESH,
