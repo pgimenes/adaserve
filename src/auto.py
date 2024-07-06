@@ -3,6 +3,7 @@ import torch
 from chop import AutoPipelineForDistributedInference
 from chop.ir import MaseGraph
 from chop.tools import get_logger
+from chop.distributed import MaseLauncher
 
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
@@ -52,3 +53,9 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
     )
 
     mg.draw()
+
+    # Launch model in distributed cluster
+    # inputs = [torch.randint(0, 10, (config_batch_size, config_sequence_length))]
+    # inputs = [torch.randn((config_batch_size, config_sequence_length, config.hidden_size))]
+    # launcher = MaseLauncher(mg, world_size=args.world_size, device_mesh=args.device_mesh)
+    # launcher.run(pipeline.pass_outputs["autosharding_analysis_pass"], inputs)
