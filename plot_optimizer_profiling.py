@@ -39,7 +39,8 @@ ax1.plot(times, solutions, marker="o", linestyle="-")
 ax1.set_xlabel("Time (s)")
 ax1.set_ylabel("Primal Solution")
 ax1.set_title("Primal Objective Solution over Time")
-ax1.set_ylim([74, 76])
+ax1.set_ylim([2300, 2600])
+ax1.set_xlim([0, 6000])
 ax1.grid(True)
 
 # Second subplot with bounds on the y-axis
@@ -47,15 +48,17 @@ ax2.plot(times, bounds, marker="o", linestyle="-")
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("Dual Objective bounds")
 ax2.set_title("Dual Objective bounds over Time")
+ax2.set_xlim([0, 6000])
 ax2.grid(True)
 
 ax3.plot(times, gaps, marker="o", linestyle="-")
 ax3.set_xlabel("Time (s)")
 ax3.set_ylabel("Percentage")
 ax3.set_title("Percentage gap between primal and Dual Objective over Time")
+ax3.set_xlim([0, 6000])
 ax3.grid(True)
 
 # Adjust layout
 plt.tight_layout()
 
-plt.savefig("output_figure.png")
+plt.savefig("experiments/bert_single_layer_bs_10k.png")
