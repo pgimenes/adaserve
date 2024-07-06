@@ -6,5 +6,5 @@ class ToyModel(nn.Module):
         super().__init__()
         self.layer = nn.Linear(config.hidden_size, config.hidden_size)
 
-    def forward(self, x):
-        return self.layer(x)
+    def forward(self, input_ids):
+        return self.layer(input_ids)

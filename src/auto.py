@@ -1,43 +1,52 @@
-def autosharding_runner(model_name, checkpoint):
-    config_sequence_length = 128 if model_name == "gpt2" else 96
-    config_batch_size = 10 * 1024
+import torch
 
-    if model_name == "gpt2":
-        config = GPT2Config()
-        config.n_layer = 1
-        model = GPT2Model(config)
-    else:
-        config = BertConfig()
-        config.num_hidden_layers = 1
-        config.hidden_size = 96
-        config.intermediate_size = 384
-        config._attn_implementation = "eager"
-        model = BertModel(config)
+from chop import AutoPipelineForDistributedInference
+from chop.ir import MaseGraph
+from chop.tools import get_logger
+
+logger = get_logger(__name__)
+logger.setLevel("DEBUG")
+
+
+def autosharding_runner(model_class=None, model_config=None, args=None):
+
+    model = model_class(model_config)
 
     mg = MaseGraph(model)
     pipeline = AutoPipelineForDistributedInference()
 
+    report_graph_fname = (
+        f"{args.checkpoint.replace('/', '-')}-graph.txt"
+        if args.checkpoint is not None
+        else f"{args.model}-graph.txt"
+    )
+
+    # Skip embeddings for bert
+    if args.model in ["toy", "bert"]:
+        input_ids = torch.randn(
+            (args.batch_size, args.sequence_length, model_config.hidden_size)
+        )
+    else:
+        input_ids = torch.randint(0, 10, (args.batch_size, args.sequence_length))
+
     mg = pipeline(
         mg,
         pass_args={
-            "report_graph_analysis_pass": {
-                "file_name": f"{checkpoint.replace('/', '-')}-graph.txt"
-            },
+            "report_graph_analysis_pass": {"file_name": report_graph_fname},
             "add_common_metadata_analysis_pass": {
                 "dummy_in": {
-                    "input_ids": torch.randint(0, 10, (1, config_sequence_length)),
-                    # "input_ids": torch.randn((1, config_sequence_length, config.hidden_size)),
+                    "input_ids": input_ids,
                 },
-                "add_value": False,
+                "add_value": True,
             },
             "autosharding_analysis_pass": {
-                "mesh_shape": MESH_SHAPE,
+                "mesh_shape": args.mesh_shape,
                 "inter_node_bandwidth": 10e9,
                 "intra_node_bandwidth": 100e9,
             },
             "resharding_transform_pass": {
                 "module_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
-                "device_mesh": DEVICE_MESH,
+                "device_mesh": args.device_mesh,
             },
         },
     )

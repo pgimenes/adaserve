@@ -1,22 +1,5 @@
 import argparse
-import os
-import sys
-import torch
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.nn as nn
-from functools import partial
-
-from chop import AutoPipelineForDistributedInference
-from chop.ir import MaseGraph
 from chop.tools import get_logger
-from torch.distributed._tensor import (
-    DeviceMesh,
-    distribute_module,
-    distribute_tensor,
-    Replicate,
-    Shard,
-)
 
 from models.toy.configuration_toy import ToyConfig
 from models.toy.toy_model import ToyModel
@@ -128,16 +111,18 @@ def main():
     ]:
         cli_arg = getattr(args, arg, None)
         if cli_arg is not None:
-            logger.info(f"Setting {arg} to {cli_arg}")
+            logger.debug(f"Setting {arg} to {cli_arg}")
             setattr(config, arg, cli_arg)
 
     # Run manual sharding if requested
     if args.manual:
+        logger.info(f"Running manual sharding for model: {args.model}")
         manual_sharding_runner(model_class=model_class, model_config=config, args=args)
 
     # Run autosharding if requested
     else:
-        autosharding_runner(args.model)
+        logger.info(f"Running autosharding for model: {args.model}")
+        autosharding_runner(model_class=model_class, model_config=config, args=args)
 
 
 if __name__ == "__main__":
