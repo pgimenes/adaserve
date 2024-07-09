@@ -5,4 +5,4 @@ python src/main.py \
     --num_hidden_layers 1 \
     --optimizer_mip_rel_gap 95 \
     --sweep-grid-size 5 \
-    --sweep-max-threads 16
+    --sweep-max-threads 8
