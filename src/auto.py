@@ -46,6 +46,8 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
                 "inter_node_bandwidth": 10e9,
                 "intra_node_bandwidth": 100e9,
                 "skip_fully_replicated": True,
+                "time_limit": args.optimizer_time_limit,
+                "mip_rel_gap": args.optimizer_mip_rel_gap,
             },
             "resharding_transform_pass": {
                 "module_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass

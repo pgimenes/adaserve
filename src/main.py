@@ -1,4 +1,6 @@
 import argparse
+import sys
+
 from chop.tools import get_logger
 
 from models.toy.configuration_toy import ToyConfig
@@ -22,7 +24,13 @@ MODEL_MAP = {"toy": ToyModel, "bert": BertModel, "gpt2": GPT2Model}
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    # Runner
+    # Action
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        default=True,
+        help="Run a sweep over input tensor profiles.",
+    )
     parser.add_argument(
         "--sweep",
         action="store_true",
@@ -33,6 +41,8 @@ def parse_args():
         action="store_true",
         help="Use manual sharding for testing/debugging. If not selected, will run autosharding instead.",
     )
+
+    # Manual sharding
     parser.add_argument(
         "--row", action="store_true", help="Use row sharding (manual) for testing."
     )
@@ -40,6 +50,25 @@ def parse_args():
         "--column",
         action="store_true",
         help="Use column sharding (manual) for testing.",
+    )
+
+    # Additional options
+    parser.add_argument(
+        "--optimizer_profile",
+        action="store_true",
+        help="Output profiling for the ILP optimizer.",
+    )
+    parser.add_argument(
+        "--optimizer_time_limit",
+        type=int,
+        default=10000,
+        help="The maximum number of seconds allotted to solve the problem.",
+    )
+    parser.add_argument(
+        "--optimizer_mip_rel_gap",
+        type=int,
+        default=0,
+        help="Termination criterion for MIP solver: terminal when primal-dual gap <= mip_rel_gap.",
     )
 
     # Define model
@@ -97,14 +126,14 @@ def parse_args():
     parser.add_argument(
         "--sweep-max-threads",
         type=int,
-        default=8,
+        default=16,
         help="Max number of threads for sweep.",
     )
-    parser.add_argument("--num-evals", type=int, default=100)
-    parser.add_argument("--min-bs", type=int, default=1)
-    parser.add_argument("--max-bs", type=int, default=1000)
-    parser.add_argument("--min-seq-len", type=int, default=1)
-    parser.add_argument("--max-seq-len", type=int, default=1000)
+    parser.add_argument("--sweep-grid-size", type=int, default=10)
+    parser.add_argument("--sweep-min-bs", type=int, default=10)
+    parser.add_argument("--sweep-max-bs", type=int, default=1000)
+    parser.add_argument("--sweep-min-seq-len", type=int, default=10)
+    parser.add_argument("--sweep-max-seq-len", type=int, default=1000)
 
     args = parser.parse_args()
     return args
