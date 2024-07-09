@@ -29,7 +29,7 @@ def parse_args():
         "--auto",
         action="store_true",
         default=True,
-        help="Run a sweep over input tensor profiles.",
+        help="Run autosharding pass on defined model.",
     )
     parser.add_argument(
         "--sweep",
@@ -42,7 +42,14 @@ def parse_args():
         help="Use manual sharding for testing/debugging. If not selected, will run autosharding instead.",
     )
 
-    # Manual sharding
+    # Autosharding args
+    parser.add_argument(
+        "--skip-forward",
+        action="store_true",
+        help="Run autosharding pass to extract optimal sharding configuration but skip forward pass.",
+    )
+
+    # Manual sharding args
     parser.add_argument(
         "--row", action="store_true", help="Use row sharding (manual) for testing."
     )

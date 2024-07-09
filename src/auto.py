@@ -60,13 +60,14 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
 
     mg.draw()
 
-    # Launch model in distributed cluster
-    launcher = MaseLauncher(
-        mg, world_size=args.world_size, device_mesh=args.device_mesh
-    )
-    launcher.run(
-        pipeline.pass_outputs["autosharding_analysis_pass"]["tensor_sharding_map"],
-        inputs=[input_ids],
-    )
+    if not args.skip_forward:
+        # Launch model in distributed cluster
+        launcher = MaseLauncher(
+            mg, world_size=args.world_size, device_mesh=args.device_mesh
+        )
+        launcher.run(
+            pipeline.pass_outputs["autosharding_analysis_pass"]["tensor_sharding_map"],
+            inputs=[input_ids],
+        )
 
     return mg, pass_outputs

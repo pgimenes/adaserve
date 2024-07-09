@@ -34,6 +34,7 @@ def evaluate_grid_point(args):
         "python",
         "src/main.py",
         "--auto",
+        "--skip-forward",
         # Model config
         "--model",
         str(args.model),
