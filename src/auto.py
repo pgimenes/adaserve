@@ -51,7 +51,7 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
                 "run_checks": True,
             },
             "resharding_transform_pass": {
-                "module_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
+                "tensor_sharding_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
                 "device_mesh": args.device_mesh,
             },
         },
@@ -60,10 +60,13 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
 
     mg.draw()
 
-    return mg, pass_outputs
-
     # Launch model in distributed cluster
-    # inputs = [torch.randint(0, 10, (config_batch_size, config_sequence_length))]
-    # inputs = [torch.randn((config_batch_size, config_sequence_length, config.hidden_size))]
-    # launcher = MaseLauncher(mg, world_size=args.world_size, device_mesh=args.device_mesh)
-    # launcher.run(pipeline.pass_outputs["autosharding_analysis_pass"], inputs)
+    launcher = MaseLauncher(
+        mg, world_size=args.world_size, device_mesh=args.device_mesh
+    )
+    launcher.run(
+        pipeline.pass_outputs["autosharding_analysis_pass"]["tensor_sharding_map"],
+        inputs=[input_ids],
+    )
+
+    return mg, pass_outputs
