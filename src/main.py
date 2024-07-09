@@ -10,6 +10,7 @@ from models.gpt2.configuration_gpt2 import GPT2Config
 
 from manual import manual_sharding_runner
 from auto import autosharding_runner
+from sweep import sweep_runner
 
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
@@ -22,6 +23,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # Runner
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Run a sweep over input tensor profiles.",
+    )
     parser.add_argument(
         "--manual",
         action="store_true",
@@ -87,6 +93,19 @@ def parse_args():
         help="Shape of logical device mesh.",
     )
 
+    # Sweep parameters (only relevant if sweep is selected)
+    parser.add_argument(
+        "--sweep-max-threads",
+        type=int,
+        default=8,
+        help="Max number of threads for sweep.",
+    )
+    parser.add_argument("--num-evals", type=int, default=100)
+    parser.add_argument("--min-bs", type=int, default=1)
+    parser.add_argument("--max-bs", type=int, default=1000)
+    parser.add_argument("--min-seq-len", type=int, default=1)
+    parser.add_argument("--max-seq-len", type=int, default=1000)
+
     args = parser.parse_args()
     return args
 
@@ -119,10 +138,16 @@ def main():
         logger.info(f"Running manual sharding for model: {args.model}")
         manual_sharding_runner(model_class=model_class, model_config=config, args=args)
 
+    # Sweep autosharding for several input request profiles
+    elif args.sweep:
+        sweep_runner(model_class=model_class, model_config=config, args=args)
+
     # Run autosharding if requested
     else:
         logger.info(f"Running autosharding for model: {args.model}")
-        autosharding_runner(model_class=model_class, model_config=config, args=args)
+        mg, pass_outputs = autosharding_runner(
+            model_class=model_class, model_config=config, args=args
+        )
 
 
 if __name__ == "__main__":
