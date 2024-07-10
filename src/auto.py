@@ -49,13 +49,18 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
                 "time_limit": args.optimizer_time_limit,
                 "mip_rel_gap": args.optimizer_mip_rel_gap,
                 "run_checks": True,
+                "preload_solution": args.preload,
+                "ilp_solution_file": f"experiments/{args.model}_bs_{args.batch_size}_seq_len_{args.sequence_length}_milp_gap_{args.optimizer_mip_rel_gap}_ilp_solution.pkl",
             },
             "resharding_transform_pass": {
                 "tensor_sharding_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
                 "device_mesh": args.device_mesh,
             },
         },
-        skip_passes=[passes.resharding_transform_pass],
+        skip_passes=[
+            passes.resharding_transform_pass,
+            passes.graph.analysis.report.report_parallelization_analysis_pass,
+        ],
     )
 
     mg.draw()
