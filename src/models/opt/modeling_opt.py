@@ -42,6 +42,7 @@ from transformers.utils import (
 )
 from .configuration_opt import OPTConfig
 
+from nn.manual import ManualLayerNorm, ManualBatchLinear, ManualLinear
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -130,10 +131,18 @@ class OPTAttention(nn.Module):
         self.scaling = self.head_dim**-0.5
         self.is_decoder = is_decoder
 
-        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.enable_bias)
-        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.enable_bias)
-        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.enable_bias)
-        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.enable_bias)
+        self.k_proj = ManualBatchLinear(
+            self.embed_dim, self.embed_dim, bias=self.enable_bias
+        )
+        self.v_proj = ManualBatchLinear(
+            self.embed_dim, self.embed_dim, bias=self.enable_bias
+        )
+        self.q_proj = ManualBatchLinear(
+            self.embed_dim, self.embed_dim, bias=self.enable_bias
+        )
+        self.out_proj = ManualBatchLinear(
+            self.embed_dim, self.embed_dim, bias=self.enable_bias
+        )
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return (
@@ -549,14 +558,17 @@ class OPTDecoderLayer(nn.Module):
 
         self.do_layer_norm_before = config.do_layer_norm_before
         self.dropout = config.dropout
-        self.activation_fn = ACT2FN[config.activation_function]
+        # self.activation_fn = ACT2FN[config.activation_function]
+        # Get torch.functional equivalent of activation function
+        # breakpoint()
+        self.activation = getattr(F, config.activation_function)
 
-        self.self_attn_layer_norm = nn.LayerNorm(
+        self.self_attn_layer_norm = ManualLayerNorm(
             self.embed_dim, elementwise_affine=config.layer_norm_elementwise_affine
         )
-        self.fc1 = nn.Linear(self.embed_dim, config.ffn_dim, bias=config.enable_bias)
-        self.fc2 = nn.Linear(config.ffn_dim, self.embed_dim, bias=config.enable_bias)
-        self.final_layer_norm = nn.LayerNorm(
+        self.fc1 = ManualLinear(self.embed_dim, config.ffn_dim, bias=config.enable_bias)
+        self.fc2 = ManualLinear(config.ffn_dim, self.embed_dim, bias=config.enable_bias)
+        self.final_layer_norm = ManualLayerNorm(
             self.embed_dim, elementwise_affine=config.layer_norm_elementwise_affine
         )
 
@@ -620,7 +632,7 @@ class OPTDecoderLayer(nn.Module):
             hidden_states = self.final_layer_norm(hidden_states)
 
         hidden_states = self.fc1(hidden_states)
-        hidden_states = self.activation_fn(hidden_states)
+        hidden_states = self.activation(hidden_states)
 
         hidden_states = self.fc2(hidden_states)
         # hidden_states = nn.functional.dropout(
@@ -674,7 +686,7 @@ class OPTPreTrainedModel(PreTrainedModel):
 
     def _init_weights(self, module):
         std = self.config.init_std
-        if isinstance(module, nn.Linear):
+        if isinstance(module, ManualBatchLinear):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.bias is not None:
                 module.bias.data.zero_()
@@ -770,14 +782,14 @@ class OPTDecoder(OPTPreTrainedModel):
         )
 
         if config.word_embed_proj_dim != config.hidden_size:
-            self.project_out = nn.Linear(
+            self.project_out = ManualBatchLinear(
                 config.hidden_size, config.word_embed_proj_dim, bias=False
             )
         else:
             self.project_out = None
 
         if config.word_embed_proj_dim != config.hidden_size:
-            self.project_in = nn.Linear(
+            self.project_in = ManualBatchLinear(
                 config.word_embed_proj_dim, config.hidden_size, bias=False
             )
         else:
@@ -787,7 +799,7 @@ class OPTDecoder(OPTPreTrainedModel):
         # with checkpoints that have been fine-tuned before transformers v4.20.1
         # see https://github.com/facebookresearch/metaseq/pull/164
         if config.do_layer_norm_before and not config._remove_final_layer_norm:
-            self.final_layer_norm = nn.LayerNorm(
+            self.final_layer_norm = ManualLayerNorm(
                 config.hidden_size,
                 elementwise_affine=config.layer_norm_elementwise_affine,
             )
@@ -900,7 +912,17 @@ class OPTDecoder(OPTPreTrainedModel):
             )
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            # inputs_embeds = self.embed_tokens(input_ids)
+            # replace with torch functional embedding
+            inputs_embeds = F.embedding(
+                input_ids,
+                self.embed_tokens.weight,
+                self.embed_tokens.padding_idx,
+                self.embed_tokens.max_norm,
+                self.embed_tokens.norm_type,
+                self.embed_tokens.scale_grad_by_freq,
+                self.embed_tokens.sparse,
+            )
 
         batch_size, seq_length = input_shape
         past_key_values_length = (
@@ -1118,7 +1140,7 @@ class OPTForCausalLM(OPTPreTrainedModel):
         self.model = OPTModel(config)
 
         # the lm_head weight is automatically tied to the embed tokens weight
-        self.lm_head = nn.Linear(
+        self.lm_head = ManualBatchLinear(
             config.word_embed_proj_dim, config.vocab_size, bias=False
         )
 
@@ -1355,7 +1377,9 @@ class OPTForSequenceClassification(OPTPreTrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.model = OPTModel(config)
-        self.score = nn.Linear(config.word_embed_proj_dim, self.num_labels, bias=False)
+        self.score = ManualBatchLinear(
+            config.word_embed_proj_dim, self.num_labels, bias=False
+        )
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1487,7 +1511,7 @@ class OPTForQuestionAnswering(OPTPreTrainedModel):
     def __init__(self, config: OPTConfig):
         super().__init__(config)
         self.model = OPTModel(config)
-        self.qa_outputs = nn.Linear(config.word_embed_proj_dim, 2)
+        self.qa_outputs = ManualBatchLinear(config.word_embed_proj_dim, 2)
 
         # Initialize weights and apply final processing
         self.post_init()

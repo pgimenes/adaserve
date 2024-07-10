@@ -54,6 +54,7 @@ from transformers.utils import (
 )
 from .configuration_bert import BertConfig
 
+from nn.manual import ManualLinear, ManualLayerNorm
 
 logger = logging.get_logger(__name__)
 
@@ -162,62 +163,6 @@ def load_tf_weights_in_bert(model, config, tf_checkpoint_path):
     return model
 
 
-class BertLinear(nn.Linear):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        device=None,
-        dtype=None,
-    ):
-        super().__init__(
-            in_features, out_features, bias=bias, device=device, dtype=dtype
-        )
-
-    def forward(self, input):
-        if self.bias is None:
-            return torch.bmm(input, self.weight.transpose(0, 1))
-
-        return torch.baddbmm(
-            self.bias,
-            input,
-            torch.transpose(self.weight, 0, 1).expand(input.size(0), -1, -1),
-        )
-
-
-class BertLayerNorm(nn.LayerNorm):
-    """
-    Same implementation as nn.LayerNorm, but used for tracing.
-    """
-
-    def __init__(
-        self,
-        normalized_shape,
-        eps=1e-05,
-        elementwise_affine=True,
-        bias=True,
-        device=None,
-        dtype=None,
-    ):
-        super().__init__(
-            normalized_shape,
-            eps=1e-05,
-            elementwise_affine=True,
-            bias=True,
-            device=None,
-            dtype=None,
-        )
-
-    def forward(self, input):
-        return torch.nn.functional.layer_norm(
-            input, self.normalized_shape, self.weight, self.bias, self.eps
-        )
-
-
-# BertLinear = nn.Linear
-
-
 class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings."""
 
@@ -235,7 +180,7 @@ class BertEmbeddings(nn.Module):
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
-        self.LayerNorm = BertLayerNorm(
+        self.LayerNorm = ManualLayerNorm(
             config.hidden_size, eps=config.layer_norm_eps, elementwise_affine=False
         )
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -317,9 +262,9 @@ class BertSelfAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = BertLinear(config.hidden_size, self.all_head_size)
-        self.key = BertLinear(config.hidden_size, self.all_head_size)
-        self.value = BertLinear(config.hidden_size, self.all_head_size)
+        self.query = ManualLinear(config.hidden_size, self.all_head_size)
+        self.key = ManualLinear(config.hidden_size, self.all_head_size)
+        self.value = ManualLinear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
         self.position_embedding_type = position_embedding_type or getattr(
@@ -471,8 +416,8 @@ class BertSelfAttention(nn.Module):
 class BertSelfOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = BertLinear(config.hidden_size, config.hidden_size)
-        self.LayerNorm = BertLayerNorm(
+        self.dense = ManualLinear(config.hidden_size, config.hidden_size)
+        self.LayerNorm = ManualLayerNorm(
             config.hidden_size, eps=config.layer_norm_eps, elementwise_affine=False
         )
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -546,7 +491,7 @@ class BertAttention(nn.Module):
 class BertIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = BertLinear(config.hidden_size, config.intermediate_size)
+        self.dense = ManualLinear(config.hidden_size, config.intermediate_size)
         if isinstance(config.hidden_act, str):
             self.intermediate_act_fn = ACT2FN[config.hidden_act]
         else:
@@ -561,8 +506,8 @@ class BertIntermediate(nn.Module):
 class BertOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = BertLinear(config.intermediate_size, config.hidden_size)
-        self.LayerNorm = BertLayerNorm(
+        self.dense = ManualLinear(config.intermediate_size, config.hidden_size)
+        self.LayerNorm = ManualLayerNorm(
             config.hidden_size, eps=config.layer_norm_eps, elementwise_affine=False
         )
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -777,7 +722,7 @@ class BertEncoder(nn.Module):
 class BertPooler(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = BertLinear(config.hidden_size, config.hidden_size)
+        self.dense = ManualLinear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -792,12 +737,12 @@ class BertPooler(nn.Module):
 class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dense = BertLinear(config.hidden_size, config.hidden_size)
+        self.dense = ManualLinear(config.hidden_size, config.hidden_size)
         if isinstance(config.hidden_act, str):
             self.transform_act_fn = ACT2FN[config.hidden_act]
         else:
             self.transform_act_fn = config.hidden_act
-        self.LayerNorm = BertLayerNorm(
+        self.LayerNorm = ManualLayerNorm(
             config.hidden_size, eps=config.layer_norm_eps, elementwise_affine=False
         )
 
@@ -815,7 +760,7 @@ class BertLMPredictionHead(nn.Module):
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
-        self.decoder = BertLinear(config.hidden_size, config.vocab_size, bias=False)
+        self.decoder = ManualLinear(config.hidden_size, config.vocab_size, bias=False)
 
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
 
@@ -841,7 +786,7 @@ class BertOnlyMLMHead(nn.Module):
 class BertOnlyNSPHead(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.seq_relationship = BertLinear(config.hidden_size, 2)
+        self.seq_relationship = ManualLinear(config.hidden_size, 2)
 
     def forward(self, pooled_output):
         seq_relationship_score = self.seq_relationship(pooled_output)
@@ -852,7 +797,7 @@ class BertPreTrainingHeads(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.predictions = BertLMPredictionHead(config)
-        self.seq_relationship = BertLinear(config.hidden_size, 2)
+        self.seq_relationship = ManualLinear(config.hidden_size, 2)
 
     def forward(self, sequence_output, pooled_output):
         prediction_scores = self.predictions(sequence_output)
@@ -873,7 +818,7 @@ class BertPreTrainedModel(PreTrainedModel):
 
     def _init_weights(self, module):
         """Initialize the weights"""
-        if isinstance(module, BertLinear):
+        if isinstance(module, ManualLinear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
@@ -883,7 +828,7 @@ class BertPreTrainedModel(PreTrainedModel):
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, BertLayerNorm):
+        elif isinstance(module, ManualLayerNorm):
             if module.bias is not None:
                 module.bias.data.zero_()
             if module.weight is not None:
@@ -1742,7 +1687,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = BertLinear(config.hidden_size, config.num_labels)
+        self.classifier = ManualLinear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1851,7 +1796,7 @@ class BertForMultipleChoice(BertPreTrainedModel):
             else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = BertLinear(config.hidden_size, 1)
+        self.classifier = ManualLinear(config.hidden_size, 1)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1968,7 +1913,7 @@ class BertForTokenClassification(BertPreTrainedModel):
             else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = BertLinear(config.hidden_size, config.num_labels)
+        self.classifier = ManualLinear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -2051,7 +1996,7 @@ class BertForQuestionAnswering(BertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.bert = BertModel(config, add_pooling_layer=False)
-        self.qa_outputs = BertLinear(config.hidden_size, config.num_labels)
+        self.qa_outputs = ManualLinear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
