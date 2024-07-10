@@ -7,6 +7,8 @@ from models.toy.configuration_toy import ToyConfig
 from models.toy.toy_model import ToyModel
 from models.bert.configuration_bert import BertConfig
 from models.bert.modeling_bert import BertModel
+from models.opt.configuration_opt import OPTConfig
+from models.opt.modeling_opt import OPTModel
 from models.gpt2.modeling_gpt2 import GPT2Model
 from models.gpt2.configuration_gpt2 import GPT2Config
 
@@ -17,8 +19,19 @@ from sweep import sweep_runner
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
 
-CONFIG_MAP = {"toy": ToyConfig, "bert": BertConfig, "gpt2": GPT2Config}
-MODEL_MAP = {"toy": ToyModel, "bert": BertModel, "gpt2": GPT2Model}
+CONFIG_MAP = {
+    "toy": ToyConfig,
+    "bert": BertConfig,
+    "opt": OPTConfig,
+    "gpt2": GPT2Config,
+}
+
+MODEL_MAP = {
+    "toy": ToyModel,
+    "bert": BertModel,
+    "opt": OPTModel,
+    "gpt2": GPT2Model,
+}
 
 
 def parse_args():
@@ -86,7 +99,7 @@ def parse_args():
     # Define model
     parser.add_argument(
         "--model",
-        choices=["bert", "gpt2", "toy"],
+        choices=["bert", "gpt2", "opt", "toy"],
         default="toy",
         help="Specify the model to use (toy/bert/gpt2)",
     )

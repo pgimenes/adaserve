@@ -38,16 +38,30 @@ def dist_model_fn(
 ) -> None:
     pprint(rank, f"Processing module {module}")
     for name, param in module.named_parameters():
-        if name in ["wte.weight", "wpe.weight"]:
-            return
-        if "weight" in name:
+        if (
+            name in ["wte.weight", "wpe.weight"]
+            or "embed_tokens" in name
+            or "embed_positions" in name
+            or isinstance(module, nn.Embedding)
+        ):
             pprint(
                 rank,
-                f"Processing parameter {name} of type {type(param)} with shape {param.shape}",
+                f"Assigning fully replicated sharding for parameter {name}.",
             )
+            param = torch.nn.Parameter(
+                distribute_tensor(param, device_mesh, (Replicate(), Replicate()))
+            )
+            deepsetattr(module, name, param)
+            return
+
+        elif "weight" in name:
             if len(param.shape) < 2:
                 pprint(rank, f"Skipping 1d parameter {name}")
                 return
+            pprint(
+                rank,
+                f"Assigning sharding {weight_sharding} for parameter {name}.",
+            )
             param = torch.nn.Parameter(
                 distribute_tensor(param, device_mesh, weight_sharding)
             )
@@ -79,9 +93,17 @@ def device_fn(
         input_fn=None,
         output_fn=None,
     )
-    in_data = torch.randn(
-        (cli_args.batch_size, cli_args.sequence_length, config.hidden_size)
-    ).to(device)
+
+    # Bert model skips embedding layer
+    if cli_args.model in ["bert", "toy"]:
+        in_data = torch.randn(
+            (cli_args.batch_size, cli_args.sequence_length, config.hidden_size)
+        ).to(device)
+    else:
+        in_data = torch.randint(
+            0, config.vocab_size, (cli_args.batch_size, cli_args.sequence_length)
+        ).to(device)
+
     in_data = distribute_tensor(in_data, mesh, input_sharding)
     pprint(rank, f"\n================= RUNNING.... \n")
     _ = model(in_data)
