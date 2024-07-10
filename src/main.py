@@ -9,6 +9,7 @@ from models.bert.configuration_bert import BertConfig
 from models.bert.modeling_bert import BertModel
 from models.gpt2.modeling_gpt2 import GPT2Model
 from models.gpt2.configuration_gpt2 import GPT2Config
+from models.mixtral.modeling_mixtral import MixtralModel, MixtralConfig
 
 from manual import manual_sharding_runner
 from auto import autosharding_runner
@@ -17,8 +18,8 @@ from sweep import sweep_runner
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
 
-CONFIG_MAP = {"toy": ToyConfig, "bert": BertConfig, "gpt2": GPT2Config}
-MODEL_MAP = {"toy": ToyModel, "bert": BertModel, "gpt2": GPT2Model}
+CONFIG_MAP = {"toy": ToyConfig, "bert": BertConfig, "gpt2": GPT2Config, "mixtral": MixtralConfig}
+MODEL_MAP = {"toy": ToyModel, "bert": BertModel, "gpt2": GPT2Model, "mixtral": MixtralModel}
 
 
 def parse_args():
@@ -29,7 +30,7 @@ def parse_args():
         "--auto",
         action="store_true",
         default=True,
-        help="Run autosharding pass on defined model.",
+        help="Run a sweep over input tensor profiles.",
     )
     parser.add_argument(
         "--sweep",
@@ -42,17 +43,8 @@ def parse_args():
         help="Use manual sharding for testing/debugging. If not selected, will run autosharding instead.",
     )
 
-    # Autosharding args
-    parser.add_argument(
-        "--skip-forward",
-        action="store_true",
-        help="Run autosharding pass to extract optimal sharding configuration but skip forward pass.",
-    )
-
-    # Manual sharding args
-    parser.add_argument(
-        "--row", action="store_true", help="Use row sharding (manual) for testing."
-    )
+    # Manual sharding
+    parser.add_argument("--row", action="store_true", help="Use row sharding (manual) for testing.")
     parser.add_argument(
         "--column",
         action="store_true",
@@ -92,13 +84,9 @@ def parse_args():
     )
 
     # Huggingface config options
-    parser.add_argument(
-        "--num_hidden_layers", type=int, default=None, help="Number of hidden layers"
-    )
+    parser.add_argument("--num_hidden_layers", type=int, default=None, help="Number of hidden layers")
     parser.add_argument("--hidden_size", type=int, default=None, help="Hidden size")
-    parser.add_argument(
-        "--intermediate_size", type=int, default=None, help="Intermediate size"
-    )
+    parser.add_argument("--intermediate_size", type=int, default=None, help="Intermediate size")
     parser.add_argument(
         "--_attn_implementation",
         type=str,
@@ -108,14 +96,10 @@ def parse_args():
 
     # Other configuration
     parser.add_argument("--batch_size", type=int, default=8, help="Intermediate size")
-    parser.add_argument(
-        "--sequence_length", type=int, default=128, help="Intermediate size"
-    )
+    parser.add_argument("--sequence_length", type=int, default=128, help="Intermediate size")
 
     # Environment setup
-    parser.add_argument(
-        "--world_size", type=int, default=8, help="Number of GPU devices."
-    )
+    parser.add_argument("--world_size", type=int, default=8, help="Number of GPU devices.")
     parser.add_argument(
         "--device_mesh",
         type=list,
@@ -181,9 +165,7 @@ def main():
     # Run autosharding if requested
     else:
         logger.info(f"Running autosharding for model: {args.model}")
-        mg, pass_outputs = autosharding_runner(
-            model_class=model_class, model_config=config, args=args
-        )
+        mg, pass_outputs = autosharding_runner(model_class=model_class, model_config=config, args=args)
 
 
 if __name__ == "__main__":
