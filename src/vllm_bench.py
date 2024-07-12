@@ -54,7 +54,7 @@ if __name__ == "__main__":
         seed=args.seed,
         temperature=1.0,
         top_p=1.0,
-        max_tokens=4,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
+        max_tokens=1,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
     )
 
     elapsed_times = []
