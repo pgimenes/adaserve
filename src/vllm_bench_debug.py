@@ -31,13 +31,13 @@ def get_rdma_perf_counter(nic_name):
     command = [
         "ethtool",
         "-S",
-        nic_name,
-        "|",
-        "grep",
-        "rx_vport_rdma_unicast_bytes"
+        nic_name
     ]
     result = subprocess.run(command, capture_output=True, text=True)
-    bytes = int(result.stdout.split("\n")[0].split(":")[1])
+    # find the line with rx_vport_rdma_unicast_bytes
+    output = result.stdout.split("\n")
+    output = [line for line in output if "rx_vport_rdma_unicast_bytes" in line][0]
+    bytes = int(output.split(":")[1].strip())
     Gbytes = bytes / 1024 / 1024 / 1024
     return Gbytes
 
