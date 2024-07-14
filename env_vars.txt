@@ -1,0 +1,10 @@
+export GLOO_SOCKET_IFNAME=enp195s0np0
+export NCCL_SOCKET_IFNAME=enp195s0np0
+ulimit -n 4096
+
+export VLLM_HOST_IP=10.250.30.42
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_TRACE_FUNCTION=1
+export NCCL_DEBUG=INFO
+
+python src/vllm_bench.py --model_name facebook/opt-66b --input_sequence_length 128 --batch_size 1000 --tensor_parallel 12
