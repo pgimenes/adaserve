@@ -14,7 +14,11 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
 
     model = model_class(model_config)
 
-    mg = MaseGraph(model)
+    mg = MaseGraph(
+        model,
+        # Don't include embedding nodes in graph
+        hf_input_names=["inputs_embeds"],
+    )
     pipeline = AutoPipelineForDistributedInference()
 
     report_graph_fname = (
@@ -23,21 +27,19 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
         else f"{args.model}-graph.txt"
     )
 
-    # Skip embeddings for bert
-    if args.model in ["toy", "bert"]:
-        input_ids = torch.randn(
-            (args.batch_size, args.sequence_length, model_config.hidden_size)
-        )
-    else:
-        input_ids = torch.randint(0, 10, (args.batch_size, args.sequence_length))
+    # Skip embedding layer
+    inputs = torch.randn(
+        (args.batch_size, args.sequence_length, model_config.hidden_size)
+    )
 
     mg, pass_outputs = pipeline(
         mg,
         pass_args={
             "report_graph_analysis_pass": {"file_name": report_graph_fname},
             "add_common_metadata_analysis_pass": {
+                # TO DO: change key according to model (non-HuggingFace)
                 "dummy_in": {
-                    "input_ids": input_ids,
+                    "inputs_embeds": inputs,
                 },
                 "add_value": True,
             },
@@ -72,7 +74,7 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
         )
         launcher.run(
             pipeline.pass_outputs["autosharding_analysis_pass"]["tensor_sharding_map"],
-            inputs=[input_ids],
+            inputs=[inputs],
         )
 
     return mg, pass_outputs
