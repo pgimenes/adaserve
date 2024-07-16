@@ -12,7 +12,11 @@ class ManualLinear(nn.Linear):
         dtype=None,
     ):
         super().__init__(
-            in_features, out_features, bias=bias, device=device, dtype=dtype
+            in_features,
+            out_features,
+            bias=bias,
+            device=device,
+            dtype=dtype,
         )
 
     def forward(self, input):
@@ -36,7 +40,11 @@ class ManualBatchLinear(nn.Linear):
         dtype=None,
     ):
         super().__init__(
-            in_features, out_features, bias=bias, device=device, dtype=dtype
+            in_features,
+            out_features,
+            bias=bias,
+            device=device,
+            dtype=dtype,
         )
 
     def forward(self, input):
@@ -66,14 +74,17 @@ class ManualLayerNorm(nn.LayerNorm):
     ):
         super().__init__(
             normalized_shape,
-            eps=1e-05,
-            elementwise_affine=True,
-            bias=True,
-            device=None,
-            dtype=None,
+            eps=eps,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+            device=device,
+            dtype=dtype,
         )
 
     def forward(self, input):
         return torch.nn.functional.layer_norm(
             input, self.normalized_shape, self.weight, self.bias, self.eps
         )
+
+    def __repr__(self):
+        return f"ManualLayerNorm({self.normalized_shape}, eps={self.eps}, elementwise_affine={self.elementwise_affine}, bias={self.bias})"

@@ -111,17 +111,30 @@ def parse_args():
 
     # Huggingface config options
     parser.add_argument(
-        "--num_hidden_layers", type=int, default=None, help="Number of hidden layers"
-    )
-    parser.add_argument("--hidden_size", type=int, default=None, help="Hidden size")
-    parser.add_argument(
-        "--intermediate_size", type=int, default=None, help="Intermediate size"
-    )
-    parser.add_argument(
         "--_attn_implementation",
         type=str,
         default=None,
         help="Attention implementation",
+    )
+
+    # OPT
+    parser.add_argument(
+        "--ffn_dim", type=int, default=None, help="Number of hidden layers"
+    )
+    parser.add_argument("--hidden_size", type=int, default=None, help="Hidden size")
+    parser.add_argument(
+        "--num_attention_heads", type=int, default=None, help="Number of hidden layers"
+    )
+    parser.add_argument(
+        "--num_hidden_layers", type=int, default=None, help="Number of hidden layers"
+    )
+    parser.add_argument(
+        "--word_embed_proj_dim", type=int, default=None, help="Number of hidden layers"
+    )
+
+    # Bert
+    parser.add_argument(
+        "--intermediate_size", type=int, default=None, help="Intermediate size"
     )
 
     # Other configuration
@@ -177,8 +190,11 @@ def main():
 
     # Update config parameters according to CLI arguments
     for arg in [
-        "num_hidden_layers",
+        "ffn_dim",
         "hidden_size",
+        "num_attention_heads",
+        "num_hidden_layers",
+        "word_embed_proj_dim",
         "intermediate_size",
         "_attn_implementation",
     ]:
