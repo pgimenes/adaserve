@@ -17,7 +17,7 @@ from auto import autosharding_runner
 from sweep import sweep_runner
 
 logger = get_logger(__name__)
-logger.setLevel("DEBUG")
+logger.setLevel("INFO")
 
 CONFIG_MAP = {
     "toy": ToyConfig,
