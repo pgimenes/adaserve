@@ -1,3 +1,4 @@
+import torch
 from vllm import LLM, SamplingParams
 import argparse
 import os
@@ -29,11 +30,17 @@ def evaluate(args):
             model=args.model_name,
             tensor_parallel_size=args.tensor_parallel,
             seed=args.seed,
+            enforce_eager=True,
+            trust_remote_code=True,
+            # skip_tokenizer_init=True,
         )
     else:
         model = LLM(
             model=args.model_name,
             seed=args.seed,
+            enforce_eager=True,
+            trust_remote_code=True,
+            # skip_tokenizer_init=True,
         )
 
     # generate the fake dataset
@@ -45,18 +52,32 @@ def evaluate(args):
     ]  # truncate based on tokenizer instead?
     prompts = [prompt] * args.batch_size
 
+    tokenized_inputs = torch.randint(
+        0, 50256, (args.batch_size, args.input_sequence_length)
+    ).tolist()
+
     sampling_params = SamplingParams(
         seed=args.seed,
         temperature=1.0,
         top_p=1.0,
         max_tokens=1,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
+        detokenize=False,
     )
 
     elapsed_times = []
 
-    for repeat in range(args.repeat):
+    for _ in range(args.repeat):
         start_time = time.time()
-        generated_outputs = model.generate(prompts, sampling_params=sampling_params)
+        # _ = model.generate(
+        #     prompts=None,
+        #     prompt_token_ids=tokenized_inputs,
+        #     sampling_params=sampling_params,
+        # )
+
+        _ = model.generate(
+            prompts=prompts,
+            sampling_params=sampling_params,
+        )
         end_time = time.time()
         elapsed_times.append(end_time - start_time)
 

@@ -57,6 +57,13 @@ def parse_args():
 
     # Autosharding args
     parser.add_argument(
+        "--algo",
+        type=str,
+        default="alpa",
+        choices=["alpa", "megatron"],
+        help="Algorithm to use for sharding the model.",
+    )
+    parser.add_argument(
         "--preload",
         action="store_true",
         help="Preload solution from file. Expected location: experiments/<model>_bs_<batch_size>_seq_len_<sequence_length>_milp_gap_<optimizer_mip_rel_gap>_ilp_solution.pkl",
