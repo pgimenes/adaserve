@@ -1,5 +1,5 @@
 export CHECKPOINT=facebook/opt-1.3b
-export BATCH_SIZE=128
+export BATCH_SIZE=64
 export SEQUENCE_LENGTH=128
 
 echo "Running autosharding for OPT model..."
@@ -8,6 +8,7 @@ echo "1. Exporting ILP solution..."
 python src/main.py \
     --model opt \
     --checkpoint $CHECKPOINT \
+    --num_hidden_layers 1 \
     --skip-forward \
     --batch_size $BATCH_SIZE \
     --sequence_length $SEQUENCE_LENGTH \
