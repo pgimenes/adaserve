@@ -1,15 +1,9 @@
+import sys, pdb, traceback
 import argparse
-import sys
 
 from chop.tools import get_logger
 
-from models.toy.configuration_toy import ToyConfig
-from models.toy.toy_model import ToyModel
-from models.bert.configuration_bert import BertConfig
-from models.bert.modeling_bert import BertModel
-from models.opt.configuration_opt import OPTConfig
-from models.opt.modeling_opt import OPTModel
-from models.gpt2.modeling_gpt2 import GPT2Model
+from models.gpt2.modeling_gpt2 import GPT2LMHeadModel
 from models.gpt2.configuration_gpt2 import GPT2Config
 
 from manual import manual_sharding_runner
@@ -20,18 +14,21 @@ logger = get_logger(__name__)
 logger.setLevel("INFO")
 
 CONFIG_MAP = {
-    "toy": ToyConfig,
-    "bert": BertConfig,
-    "opt": OPTConfig,
     "gpt2": GPT2Config,
 }
 
 MODEL_MAP = {
-    "toy": ToyModel,
-    "bert": BertModel,
-    "opt": OPTModel,
-    "gpt2": GPT2Model,
+    "gpt2": GPT2LMHeadModel,
 }
+
+
+def excepthook(exc_type, exc_value, exc_traceback):
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    print("\nEntering debugger...")
+    pdb.post_mortem(exc_traceback)
+
+
+sys.excepthook = excepthook
 
 
 def parse_args():
@@ -106,9 +103,9 @@ def parse_args():
     # Define model
     parser.add_argument(
         "--model",
-        choices=["bert", "gpt2", "opt", "toy"],
-        default="toy",
-        help="Specify the model to use (toy/bert/gpt2)",
+        choices=["gpt2"],
+        default="gpt2",
+        help="Specify the model to use (gpt2)",
     )
     parser.add_argument(
         "--checkpoint",
@@ -128,15 +125,35 @@ def parse_args():
     parser.add_argument(
         "--ffn_dim", type=int, default=None, help="Number of hidden layers"
     )
-    parser.add_argument("--hidden_size", type=int, default=None, help="Hidden size")
     parser.add_argument(
-        "--num_attention_heads", type=int, default=None, help="Number of hidden layers"
+        "--hidden_size",
+        type=int,
+        default=None,
+        help="Hidden size",
     )
     parser.add_argument(
-        "--num_hidden_layers", type=int, default=None, help="Number of hidden layers"
+        "--num_attention_heads",
+        type=int,
+        default=None,
+        help="Number of hidden layers",
     )
     parser.add_argument(
-        "--word_embed_proj_dim", type=int, default=None, help="Number of hidden layers"
+        "--num_hidden_layers",
+        type=int,
+        default=None,
+        help="Number of hidden layers",
+    )
+    parser.add_argument(
+        "--word_embed_proj_dim",
+        type=int,
+        default=None,
+        help="Number of hidden layers",
+    )
+    parser.add_argument(
+        "--activation_function",
+        type=str,
+        default=None,
+        help="Activation function'",
     )
 
     # Bert
@@ -145,14 +162,25 @@ def parse_args():
     )
 
     # Other configuration
-    parser.add_argument("--batch_size", type=int, default=8, help="Intermediate size")
     parser.add_argument(
-        "--sequence_length", type=int, default=128, help="Intermediate size"
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Intermediate size",
+    )
+    parser.add_argument(
+        "--sequence_length",
+        type=int,
+        default=128,
+        help="Intermediate size",
     )
 
     # Environment setup
     parser.add_argument(
-        "--world_size", type=int, default=8, help="Number of GPU devices."
+        "--world_size",
+        type=int,
+        default=8,
+        help="Number of GPU devices.",
     )
     parser.add_argument(
         "--device_mesh",
@@ -174,11 +202,31 @@ def parse_args():
         default=16,
         help="Max number of threads for sweep.",
     )
-    parser.add_argument("--sweep-grid-size", type=int, default=10)
-    parser.add_argument("--sweep-min-bs", type=int, default=10)
-    parser.add_argument("--sweep-max-bs", type=int, default=1000)
-    parser.add_argument("--sweep-min-seq-len", type=int, default=10)
-    parser.add_argument("--sweep-max-seq-len", type=int, default=1000)
+    parser.add_argument(
+        "--sweep-grid-size",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--sweep-min-bs",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--sweep-max-bs",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "--sweep-min-seq-len",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--sweep-max-seq-len",
+        type=int,
+        default=1000,
+    )
 
     args = parser.parse_args()
     return args
@@ -204,6 +252,7 @@ def main():
         "word_embed_proj_dim",
         "intermediate_size",
         "_attn_implementation",
+        "activation_function",
     ]:
         cli_arg = getattr(args, arg, None)
         if cli_arg is not None:
