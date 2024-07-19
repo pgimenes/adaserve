@@ -32,6 +32,7 @@ def evaluate(args):
             seed=args.seed,
             enforce_eager=True,
             trust_remote_code=True,
+            dtype=torch.float32,
             # skip_tokenizer_init=True,
         )
     else:
@@ -39,7 +40,7 @@ def evaluate(args):
             model=args.model_name,
             seed=args.seed,
             enforce_eager=True,
-            trust_remote_code=True,
+            dtype=torch.float32,
             # skip_tokenizer_init=True,
         )
 
