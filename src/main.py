@@ -112,6 +112,11 @@ def parse_args():
         default=None,
         help="Specify the Huggingface checkpoint",
     )
+    parser.add_argument(
+        "--from_config",
+        action="store_true",
+        help="Instantiate new model from config. If not set, will load from checkpoint.",
+    )
 
     # Huggingface config options
     parser.add_argument(

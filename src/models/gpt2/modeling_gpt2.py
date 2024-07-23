@@ -1,19 +1,4 @@
-# coding=utf-8
-# Copyright 2018 The OpenAI Team Authors and HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""PyTorch OpenAI GPT-2 model."""
+# Adapted from https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
 
 import math
 import os
@@ -105,11 +90,20 @@ class GPT2Attention(nn.Module):
         self.reorder_and_upcast_attn = config.reorder_and_upcast_attn
 
         if self.is_cross_attention:
-            self.c_attn = Conv1D(2 * self.embed_dim, self.embed_dim)
-            self.q_attn = Conv1D(self.embed_dim, self.embed_dim)
+            # self.c_attn = Conv1D(2 * self.embed_dim, self.embed_dim)
+            self.c_attn = ManualBatchLinear(self.embed_dim, 2 * self.embed_dim)
+            # self.q_attn = Conv1D(self.embed_dim, self.embed_dim)
+            self.q_attn = ManualBatchLinear(self.embed_dim, self.embed_dim)
         else:
-            self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim)
-        self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
+            # get QKV parameters
+            # self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim)
+            # self.c_attn = ManualBatchLinear(self.embed_dim, 3 * self.embed_dim)
+            self.c_attn = nn.Linear(self.embed_dim, 3 * self.embed_dim)
+
+        # out projection
+        # self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
+        # self.c_proj = ManualBatchLinear(self.embed_dim, self.embed_dim)
+        self.c_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
@@ -575,8 +569,12 @@ class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
         embed_dim = config.hidden_size
-        self.c_fc = Conv1D(intermediate_size, embed_dim)
-        self.c_proj = Conv1D(embed_dim, intermediate_size)
+        # self.c_fc = Conv1D(intermediate_size, embed_dim)
+        # self.c_proj = Conv1D(embed_dim, intermediate_size)
+        # self.c_fc = ManualBatchLinear(embed_dim, intermediate_size)
+        # self.c_proj = ManualBatchLinear(intermediate_size, embed_dim)
+        self.c_fc = nn.Linear(embed_dim, intermediate_size)
+        self.c_proj = nn.Linear(intermediate_size, embed_dim)
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
 

@@ -4,12 +4,13 @@ export BATCH_SIZE=8
 export SEQUENCE_LENGTH=128
 export MIP_REL_GAP=98
 
-echo "Running autosharding for OPT model..."
+echo "Running autosharding for ${MODEL} model..."
 
 echo "1. Exporting ILP solution..."
 python src/main.py \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
+    --from_config \
     --num_hidden_layers 1 \
     --activation_function gelu \
     --skip-forward \
@@ -18,9 +19,10 @@ python src/main.py \
     --optimizer_mip_rel_gap $MIP_REL_GAP
 
 echo "2. Loading ILP solution for forward pass..."
-python src/main.py \
+viztracer src/main.py \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
+    --from_config \
     --activation_function gelu \
     --preload \
     --batch_size $BATCH_SIZE \

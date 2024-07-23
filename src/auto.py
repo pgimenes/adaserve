@@ -12,7 +12,10 @@ logger.setLevel("DEBUG")
 
 def autosharding_runner(model_class=None, model_config=None, args=None):
 
-    model = model_class(model_config)
+    if args.from_config:
+        model = model_class(model_config)
+    else:
+        model = model_class.from_pretrained(args.checkpoint)
 
     mg = MaseGraph(
         model,
@@ -26,6 +29,8 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
         if args.checkpoint is not None
         else args.model
     )
+
+    model_name = model_name[1:] if model_name.startswith("-") else model_name
 
     # Skip embedding layer
     inputs = torch.randn(
@@ -50,7 +55,7 @@ def autosharding_runner(model_class=None, model_config=None, args=None):
                 "mesh_shape": args.mesh_shape,
                 "inter_node_bandwidth": 10e9,
                 "intra_node_bandwidth": 100e9,
-                "skip_fully_replicated": True,
+                "skip_fully_replicated": False,
                 "time_limit": args.optimizer_time_limit,
                 "mip_rel_gap": args.optimizer_mip_rel_gap,
                 "run_checks": False,

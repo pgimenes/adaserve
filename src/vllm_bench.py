@@ -11,6 +11,8 @@ import logging
 logger = logging.getLogger("vllm_bench")
 logging.basicConfig(level=logging.INFO)
 
+from viztracer import VizTracer
+
 
 def evaluate(args):
     logger.info(f"Evaluating model: {args.model_name}")
@@ -67,22 +69,18 @@ def evaluate(args):
 
     elapsed_times = []
 
-    for _ in range(args.repeat):
+    for itr in range(args.repeat):
+        logger.info(f"Running iteration: {itr}")
         start_time = time.time()
-        # _ = model.generate(
-        #     prompts=None,
-        #     prompt_token_ids=tokenized_inputs,
-        #     sampling_params=sampling_params,
-        # )
-
         _ = model.generate(
             prompts=prompts,
             sampling_params=sampling_params,
         )
         end_time = time.time()
         elapsed_times.append(end_time - start_time)
+        logger.info(f"Time taken: {end_time - start_time}s")
 
-    elapsed_time = sum(elapsed_times) / len(elapsed_times)
+    elapsed_time = sum(elapsed_times[2:]) / len(elapsed_times[2:])
     tps = (args.batch_size * args.input_sequence_length) / elapsed_time
 
     print(
@@ -163,6 +161,7 @@ def sweep_runner(args):
 
 
 def main(args):
+
     if args.sweep:
         sweep_runner(args)
 
@@ -196,7 +195,7 @@ def cli():
     parser.add_argument(
         "--repeat",
         type=int,
-        default=5,
+        default=10,
     )
     parser.add_argument(
         "--input_sequence_length",
@@ -241,6 +240,12 @@ def cli():
     return parser.parse_args()
 
 
+tracer = VizTracer()
+tracer.start()
+
 if __name__ == "__main__":
     args = cli()
     main(args)
+
+tracer.stop()
+tracer.save()

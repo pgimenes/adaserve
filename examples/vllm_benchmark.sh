@@ -1,6 +1,6 @@
-export CHECKPOINT=facebook/opt-1.3b
+export CHECKPOINT=/data/huggingface/nice-gpt2-1.5b
 export TENSOR_PARALLEL=8
-export BATCH_SIZE=64
+export BATCH_SIZE=8
 export SEQUENCE_LENGTH=128
 
 python src/vllm_bench.py \
