@@ -6,25 +6,13 @@ export MIP_REL_GAP=98
 
 echo "Running autosharding for ${MODEL} model..."
 
-echo "1. Exporting ILP solution..."
 python src/main.py \
     --model $MODEL \
+    --preload \
     --checkpoint $CHECKPOINT \
     --from_config \
     --num_hidden_layers 1 \
     --activation_function gelu \
-    --skip-forward \
-    --batch_size $BATCH_SIZE \
-    --sequence_length $SEQUENCE_LENGTH \
-    --optimizer_mip_rel_gap $MIP_REL_GAP
-
-echo "2. Loading ILP solution for forward pass..."
-viztracer src/main.py \
-    --model $MODEL \
-    --checkpoint $CHECKPOINT \
-    --from_config \
-    --activation_function gelu \
-    --preload \
     --batch_size $BATCH_SIZE \
     --sequence_length $SEQUENCE_LENGTH \
     --optimizer_mip_rel_gap $MIP_REL_GAP

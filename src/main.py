@@ -2,6 +2,7 @@ import sys, pdb, traceback
 import argparse
 
 from chop.tools import get_logger
+from chop.distributed.launcher import MaseLauncher
 
 from models.gpt2.modeling_gpt2 import GPT2LMHeadModel
 from models.gpt2.configuration_gpt2 import GPT2Config
@@ -9,6 +10,7 @@ from models.gpt2.configuration_gpt2 import GPT2Config
 from manual import manual_sharding_runner
 from auto import autosharding_runner
 from sweep import sweep_runner
+from distributed import device_fn
 
 logger = get_logger(__name__)
 logger.setLevel("INFO")
@@ -34,7 +36,7 @@ sys.excepthook = excepthook
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    # Action
+    # Action (running mode)
     parser.add_argument(
         "--auto",
         action="store_true",
@@ -50,6 +52,11 @@ def parse_args():
         "--manual",
         action="store_true",
         help="Use manual sharding for testing/debugging. If not selected, will run autosharding instead.",
+    )
+    parser.add_argument(
+        "--pre_mp_autosharding",
+        action="store_true",
+        help="Run the autosharding pass before spawning multiprocessing for debugging.",
     )
 
     # Autosharding args
@@ -276,9 +283,21 @@ def main():
     # Run autosharding if requested
     else:
         logger.info(f"Running autosharding for model: {args.model}")
-        mg, pass_outputs = autosharding_runner(
-            model_class=model_class, model_config=config, args=args
-        )
+
+        if args.pre_mp_autosharding:
+            mg, pass_outputs = autosharding_runner(
+                model_class=model_class, model_config=config, args=args
+            )
+
+        if not args.skip_forward:
+            # Launch model in distributed cluster
+            launcher = MaseLauncher(
+                world_size=args.world_size,
+                device_mesh=args.device_mesh,
+                device_fn=device_fn,
+            )
+
+            launcher.run(model_class, config, args)
 
 
 if __name__ == "__main__":

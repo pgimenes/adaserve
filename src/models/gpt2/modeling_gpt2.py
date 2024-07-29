@@ -97,13 +97,13 @@ class GPT2Attention(nn.Module):
         else:
             # get QKV parameters
             # self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim)
-            # self.c_attn = ManualBatchLinear(self.embed_dim, 3 * self.embed_dim)
-            self.c_attn = nn.Linear(self.embed_dim, 3 * self.embed_dim)
+            self.c_attn = ManualBatchLinear(self.embed_dim, 3 * self.embed_dim)
+            # self.c_attn = nn.Linear(self.embed_dim, 3 * self.embed_dim)
 
         # out projection
         # self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
-        # self.c_proj = ManualBatchLinear(self.embed_dim, self.embed_dim)
-        self.c_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.c_proj = ManualBatchLinear(self.embed_dim, self.embed_dim)
+        # self.c_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
@@ -571,10 +571,10 @@ class GPT2MLP(nn.Module):
         embed_dim = config.hidden_size
         # self.c_fc = Conv1D(intermediate_size, embed_dim)
         # self.c_proj = Conv1D(embed_dim, intermediate_size)
-        # self.c_fc = ManualBatchLinear(embed_dim, intermediate_size)
-        # self.c_proj = ManualBatchLinear(intermediate_size, embed_dim)
-        self.c_fc = nn.Linear(embed_dim, intermediate_size)
-        self.c_proj = nn.Linear(intermediate_size, embed_dim)
+        self.c_fc = ManualBatchLinear(embed_dim, intermediate_size)
+        self.c_proj = ManualBatchLinear(intermediate_size, embed_dim)
+        # self.c_fc = nn.Linear(embed_dim, intermediate_size)
+        # self.c_proj = nn.Linear(intermediate_size, embed_dim)
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
 
@@ -1072,7 +1072,7 @@ class GPT2Model(GPT2PreTrainedModel):
                 dtype=torch.long,
                 device=device,
             )
-            position_ids = position_ids.unsqueeze(0)
+            position_ids = torch.unsqueeze(position_ids, 0)
 
         if inputs_embeds is None:
             inputs_embeds = self.wte(input_ids)
