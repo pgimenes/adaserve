@@ -9,7 +9,12 @@ logger = get_logger(__name__)
 logger.setLevel("DEBUG")
 
 
-def autosharding_runner(model_class=None, model_config=None, args=None, inputs=None):
+def autosharding_runner(
+    model_class=None,
+    model_config=None,
+    args=None,
+    inputs=None,
+):
 
     cli_args = args
 

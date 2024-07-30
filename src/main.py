@@ -103,7 +103,7 @@ def parse_args():
     parser.add_argument(
         "--optimizer_mip_rel_gap",
         type=int,
-        default=0,
+        default=98,
         help="Termination criterion for MIP solver: terminal when primal-dual gap <= mip_rel_gap.",
     )
 
@@ -288,6 +288,7 @@ def main():
             mg, pass_outputs = autosharding_runner(
                 model_class=model_class, model_config=config, args=args
             )
+            return
 
         if not args.skip_forward:
             # Launch model in distributed cluster

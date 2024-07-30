@@ -8,11 +8,8 @@ echo "Running autosharding for ${MODEL} model..."
 
 python src/main.py \
     --model $MODEL \
-    --preload \
     --checkpoint $CHECKPOINT \
     --from_config \
     --num_hidden_layers 1 \
-    --activation_function gelu \
     --batch_size $BATCH_SIZE \
-    --sequence_length $SEQUENCE_LENGTH \
-    --optimizer_mip_rel_gap $MIP_REL_GAP
+    --sequence_length $SEQUENCE_LENGTH

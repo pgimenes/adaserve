@@ -13,7 +13,7 @@ from packaging import version
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from transformers.activations import ACT2FN
+# from transformers.activations import ACT2FN
 from transformers.modeling_attn_mask_utils import (
     _prepare_4d_attention_mask_for_sdpa,
     _prepare_4d_causal_attention_mask_for_sdpa,
@@ -45,7 +45,7 @@ from transformers.utils import (
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 from .configuration_gpt2 import GPT2Config
 
-from nn.manual import ManualLayerNorm, ManualBatchLinear, ManualLinear1D
+from nn.manual import ManualLayerNorm, ManualBatchLinear, ManualLinear2D
 
 if is_flash_attn_2_available():
     from transformers.modeling_flash_attention_utils import _flash_attention_forward
@@ -55,6 +55,10 @@ logger = logging.get_logger(__name__)
 
 _CHECKPOINT_FOR_DOC = "openai-community/gpt2"
 _CONFIG_FOR_DOC = "GPT2Config"
+
+ACT2FN = {
+    "gelu": F.gelu,
+}
 
 
 class GPT2Attention(nn.Module):
@@ -1234,7 +1238,7 @@ class GPT2Model(GPT2PreTrainedModel):
 
         hidden_states = self.ln_f(hidden_states)
 
-        hidden_states = hidden_states.view(output_shape)
+        # hidden_states = hidden_states.view(output_shape)
         # Add last hidden state
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1426,17 +1430,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
 
-        bs, seq_len, _ = hidden_states.size()
-        hidden_states = hidden_states.view(
-            bs * seq_len,
-            self.config.n_embd,
-        )
         lm_logits = self.lm_head(hidden_states)
-        lm_logits = lm_logits.view(
-            bs,
-            seq_len,
-            self.config.vocab_size,
-        )
 
         loss = None
         if labels is not None:

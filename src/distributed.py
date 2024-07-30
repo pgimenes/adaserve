@@ -4,14 +4,8 @@ from functools import partial
 
 import torch.distributed as dist
 
-from torch.distributed._tensor import (
-    DeviceMesh,
-    Replicate,
-    Shard,
-)
+from torch.distributed._tensor import DeviceMesh
 
-from chop import AutoPipelineForDistributedInference
-from chop.ir import MaseGraph
 from chop.distributed.tensor import distribute_module, distribute_tensor, DTensor
 from chop.distributed.utils import (
     rlog,
@@ -22,6 +16,7 @@ from chop.distributed.utils import (
 import chop.passes as passes
 from chop.passes.graph.analysis.utils import fetch_attr, load_arg
 from chop.tools import get_logger
+from chop.nn.functional.dtensor import redistribute_dtensor
 
 from auto import autosharding_runner
 
@@ -48,32 +43,71 @@ def node_interpreter(rank, mg, inputs):
                 logger,
                 rank,
                 f"Placeholder {node.name} has type {type(inputs)}, shape {inputs.shape}",
-                level="info",
+                level="debug",
             )
 
         elif node.op == "get_attr":
             result = fetch_attr(mg.model, node.target)
-
-        elif node.op == "call_function":
-            args = load_arg(node.args, env)
-            kwargs = load_arg(node.kwargs, env)
-            rlog(logger, rank, f"Running function {node.name}", level="info")
-            result = node.target(*args, **kwargs)
             rlog(
                 logger,
                 rank,
-                f"Function {node.name} returned result: {result}",
-                level="info",
+                f"get_attr node {node.name} has type {type(inputs)}, shape {inputs.shape}",
+                level="debug",
             )
-            if isinstance(result, torch.Tensor):
-                rlog(logger, rank, f"Shape: {result.shape}", level="info")
             if isinstance(result, DTensor):
                 rlog(
                     logger,
                     rank,
                     f"Local shape: {result._local_tensor.shape}, sharding: {result._spec}",
-                    level="info",
+                    level="debug",
                 )
+
+        elif node.op == "call_function":
+            args = load_arg(node.args, env)
+            kwargs = load_arg(node.kwargs, env)
+            rlog(logger, rank, f"Running function {node.name}", level="info")
+
+            try:
+                result = node.target(*args, **kwargs)
+
+                rlog(
+                    logger,
+                    rank,
+                    f"Function {node.name} returned result: {result}",
+                    level="debug",
+                )
+                if isinstance(result, torch.Tensor):
+                    rlog(
+                        logger,
+                        rank,
+                        f"Shape: {result.shape}",
+                        level="debug",
+                    )
+                if isinstance(result, DTensor):
+                    rlog(
+                        logger,
+                        rank,
+                        f"Local shape: {result._local_tensor.shape}, sharding: {result._spec}",
+                        level="debug",
+                    )
+
+                    if node.target != redistribute_dtensor:
+                        assert (
+                            result._spec.placements
+                            == node.meta["mase"]["common"]["results"]["data_out_0"][
+                                "dtensor_spec"
+                            ].placements
+                        ), f"Sharding spec mismatch for node: {node.name}"
+
+            except Exception as e:
+                msg = f"Error in function {node.name}.\nNode args: {node.meta['mase']['common']['args'].keys()}\nArgs: {[(arg.shape, arg._spec, arg._local_tensor.shape) for arg in args if isinstance(arg, (torch.Tensor, DTensor))]}"
+                rlog(
+                    logger,
+                    rank,
+                    msg,
+                    level="error",
+                )
+                raise e
 
         # Register in environment dictionary
         env[node.name] = result
@@ -135,12 +169,26 @@ def device_fn(
 
     # Run forward pass
     rlog(logger, rank, f"Starting forward pass.", level="info")
-    inputs = distribute_tensor(inputs, mesh, [Replicate(), Replicate()])
+
+    # Get the sharding spec for the input tensor
+    for node in mg.fx_graph.nodes:
+        if node.op == "placeholder":
+            input_sharding = node.meta["mase"]["common"]["results"]["data_out_0"][
+                "dtensor_spec"
+            ].placements
+
+    rlog(logger, rank, f"Sharding input to: {input_sharding}", level="debug")
+    inputs = distribute_tensor(
+        inputs,
+        mesh,
+        input_sharding,
+    )
+
     _, time_taken = distributed_average_timing(
         fn=mg.model,
         args=[inputs],
-        repeat=10,
-        warmup_iters=2,
+        repeat=1,
+        warmup_iters=0,
     )
     rlog(logger, rank, f"Forward pass finished. Time taken: {time_taken}", level="info")
     # node_interpreter(rank, mg, inputs)
