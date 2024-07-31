@@ -1,25 +1,32 @@
 import json
 
-with open("result.json", "r") as file:
-    data = json.load(file)
 
-filtered = []
+def _separate_by_thread(data):
+    # find set of unique pids under data["traceEvents"][idx]["pid"]
+    pids = set()
+    for idx in range(len(data["traceEvents"])):
+        pids.add(data["traceEvents"][idx]["pid"])
 
-print(f"Num of events: {len(data['traceEvents'])}")
-for idx, i in enumerate(data["traceEvents"]):
-    if (
-        "torch._ops.aten." in i["name"]
-        and i["pid"] == 692972
-        # and i["ts"] > 1763677872547
-        and i["ts"] > 1763678293465
-        and i["ts"] < 1763679159195
-    ):
-        filtered.append(i)
+    data_per_pid = {}
+    for pid in pids:
+        data_per_pid[pid] = {
+            "traceEvents": [],
+            "viztracer_metadata": data["viztracer_metadata"],
+            "file_info": data["file_info"],
+        }
 
-print(filtered[0])
+    for idx in range(len(data["traceEvents"])):
+        pid = data["traceEvents"][idx]["pid"]
+        data_per_pid[pid]["traceEvents"].append(data["traceEvents"][idx])
 
-time = 0
-for i in filtered:
-    time += i["dur"]
+    # now dump to separate json files
+    for pid in pids:
+        with open(f"result_{pid}.json", "w") as file:
+            json.dump(data_per_pid[pid], file)
 
-print(time)
+
+if __name__ == "__main__":
+    with open("result.json", "r") as file:
+        data = json.load(file)
+
+    _separate_by_thread(data)
