@@ -62,7 +62,7 @@ def autosharding_runner(
                 "mesh_shape": cli_args.mesh_shape,
                 "inter_node_bandwidth": 10e9,
                 "intra_node_bandwidth": 100e9,
-                "skip_fully_replicated": True,
+                "skip_fully_replicated": False,
                 "time_limit": cli_args.optimizer_time_limit,
                 "mip_rel_gap": cli_args.optimizer_mip_rel_gap,
                 "run_checks": False,

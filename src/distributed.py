@@ -187,8 +187,8 @@ def device_fn(
     _, time_taken = distributed_average_timing(
         fn=mg.model,
         args=[inputs],
-        repeat=1,
-        warmup_iters=0,
+        repeat=10,
+        warmup_iters=2,
     )
     rlog(logger, rank, f"Forward pass finished. Time taken: {time_taken}", level="info")
     # node_interpreter(rank, mg, inputs)

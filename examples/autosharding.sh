@@ -10,6 +10,6 @@ python src/main.py \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
     --from_config \
-    --num_hidden_layers 1 \
+    --pre_mp_autosharding \
     --batch_size $BATCH_SIZE \
     --sequence_length $SEQUENCE_LENGTH
