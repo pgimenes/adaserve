@@ -9,6 +9,30 @@ logger = get_logger(__name__)
 logger.setLevel("DEBUG")
 
 
+def get_cached_solution_fname(model_name, cli_args):
+    solution_fname = f"experiments/{model_name}_bs_{cli_args.batch_size}_seq_len_{cli_args.sequence_length}_milp_gap_{cli_args.optimizer_mip_rel_gap}_"
+
+    # If any non-default configuration parameters are passed,
+    # add to the solution name
+    for arg in [
+        "ffn_dim",
+        "hidden_size",
+        "num_attention_heads",
+        "num_hidden_layers",
+        "word_embed_proj_dim",
+        "intermediate_size",
+        "_attn_implementation",
+        "activation_function",
+    ]:
+        cli_arg = getattr(cli_args, arg, None)
+        if cli_arg is not None:
+            solution_fname += f"{arg}_{cli_arg}_"
+
+    solution_fname += "solution.pkl"
+
+    return solution_fname
+
+
 def autosharding_runner(
     model_class=None,
     model_config=None,
@@ -67,7 +91,7 @@ def autosharding_runner(
                 "mip_rel_gap": cli_args.optimizer_mip_rel_gap,
                 "run_checks": False,
                 "preload_solution": cli_args.preload,
-                "ilp_solution_file": f"experiments/{model_name}_bs_{cli_args.batch_size}_seq_len_{cli_args.sequence_length}_milp_gap_{cli_args.optimizer_mip_rel_gap}_ilp_solution.pkl",
+                "ilp_solution_file": get_cached_solution_fname(model_name, cli_args),
             },
             "resharding_transform_pass": {
                 "tensor_sharding_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
@@ -81,7 +105,6 @@ def autosharding_runner(
     )
 
     # Skip drawing for larger graphs to reduce runtime
-    if args.num_hidden_layers == 1:
-        mg.draw()
+    mg.draw()
 
     return mg, pass_outputs
