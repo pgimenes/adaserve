@@ -21,7 +21,7 @@ from chop.nn.functional.dtensor import redistribute_dtensor
 from auto import autosharding_runner
 
 logger = get_logger(__name__)
-logger.setLevel("DEBUG")
+logger.setLevel("INFO")
 
 
 def node_interpreter(rank, mg, inputs):
@@ -92,15 +92,16 @@ def node_interpreter(rank, mg, inputs):
                     )
 
                     if node.target != redistribute_dtensor:
+                        expected_spec = node.meta["mase"]["common"]["results"][
+                            "data_out_0"
+                        ]["dtensor_spec"].placements
+                        received_spec = result._spec.placements
                         assert (
-                            result._spec.placements
-                            == node.meta["mase"]["common"]["results"]["data_out_0"][
-                                "dtensor_spec"
-                            ].placements
-                        ), f"Sharding spec mismatch for node: {node.name}"
+                            expected_spec == received_spec
+                        ), f"Sharding spec mismatch for node: {node.name}. Expected: {expected_spec}, got: {received_spec}"
 
             except Exception as e:
-                msg = f"Error in function {node.name}.\nNode args: {node.meta['mase']['common']['args'].keys()}\nArgs: {[(arg.shape, arg._spec, arg._local_tensor.shape) for arg in args if isinstance(arg, (torch.Tensor, DTensor))]}"
+                msg = f"Error in function {node.name}.\nNode args: {node.meta['mase']['common']['args'].keys()}\nArgs: {[(arg.shape, arg._spec, arg._local_tensor.shape) for arg in args if isinstance(arg, DTensor)]}"
                 rlog(
                     logger,
                     rank,
