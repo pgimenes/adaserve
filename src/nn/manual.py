@@ -36,24 +36,26 @@ class ManualLinear2D(nn.Linear):
             dtype=dtype,
         )
 
-    def forward(self, input):
-        weight = torch.transpose(
-            self.weight,
-            0,
-            1,
+        self.weight_transpose = nn.Parameter(
+            torch.transpose(
+                self.weight,
+                0,
+                1,
+            )
         )
 
+    def forward(self, input):
         # Invoke required kernel according to bias
         if self.bias is None:
             out = torch.mm(
                 input,
-                weight,
+                self.weight_transpose,
             )
         else:
             out = torch.addmm(
                 self.bias,
                 input,
-                weight,
+                self.weight_transpose,
             )
 
         return out
@@ -93,16 +95,20 @@ class ManualBatchLinear(nn.Linear):
             dtype=dtype,
         )
 
+        self.weight_transposed = nn.Parameter(
+            torch.transpose(
+                self.weight,
+                0,
+                1,
+            )
+        )
+
     def forward(self, input):
 
         # Ensure input and weights are a 3D batch
         # reshaped = input.reshape((-1,) + input.shape[-2:])
 
-        weight = torch.transpose(
-            self.weight,
-            0,
-            1,
-        ).expand(
+        weight = self.weight_transposed.expand(
             input.shape[0],
             -1,
             -1,

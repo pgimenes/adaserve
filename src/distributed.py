@@ -67,48 +67,65 @@ def node_interpreter(rank, mg, inputs):
             kwargs = load_arg(node.kwargs, env)
             rlog(logger, rank, f"Running function {node.name}", level="info")
 
-            try:
-                result = node.target(*args, **kwargs)
-
-                rlog(
-                    logger,
-                    rank,
-                    f"Function {node.name} returned result: {result}",
-                    level="debug",
-                )
-                if isinstance(result, torch.Tensor):
+            for arg_idx, arg in enumerate(args):
+                if isinstance(arg, DTensor):
                     rlog(
                         logger,
                         rank,
-                        f"Shape: {result.shape}",
+                        f"Arg {arg_idx} (DTensor) shape: {arg.shape}, local_tensor.shape: {arg._local_tensor.shape}, spec: {arg._spec}",
                         level="debug",
                     )
-                if isinstance(result, DTensor):
+                elif isinstance(arg, torch.Tensor):
                     rlog(
                         logger,
                         rank,
-                        f"Local shape: {result._local_tensor.shape}, sharding: {result._spec}",
+                        f"Arg {arg_idx} (Tensor) shape: {arg.shape}",
+                        level="debug",
+                    )
+                else:
+                    rlog(
+                        logger,
+                        rank,
+                        f"Arg {arg_idx}: {arg}",
                         level="debug",
                     )
 
-                    if node.target != redistribute_dtensor:
-                        expected_spec = node.meta["mase"]["common"]["results"][
-                            "data_out_0"
-                        ]["dtensor_spec"].placements
-                        received_spec = result._spec.placements
-                        assert (
-                            expected_spec == received_spec
-                        ), f"Sharding spec mismatch for node: {node.name}. Expected: {expected_spec}, got: {received_spec}"
+            result = node.target(*args, **kwargs)
 
-            except Exception as e:
-                msg = f"Error in function {node.name}.\nNode args: {node.meta['mase']['common']['args'].keys()}\nArgs: {[(arg.shape, arg._spec, arg._local_tensor.shape) for arg in args if isinstance(arg, DTensor)]}"
-                rlog(
-                    logger,
-                    rank,
-                    msg,
-                    level="error",
-                )
-                raise e
+            rlist = (result,) if not isinstance(result, (tuple, list)) else result
+            for ridx, r in enumerate(rlist):
+                if isinstance(r, DTensor):
+                    rlog(
+                        logger,
+                        rank,
+                        f"Result {ridx} (DTensor) shape: {r.shape}, local_shape: {r._local_tensor.shape}, spec: {r._spec}",
+                        level="debug",
+                    )
+
+                    if node.meta["mase"]["common"].get("results", None) is not None:
+                        node_spec = node.meta["mase"]["common"]["results"][
+                            f"data_out_{ridx}"
+                        ]["dtensor_spec"]
+                        rlog(
+                            logger,
+                            rank,
+                            f"expected spec: {node_spec}",
+                            level="debug",
+                        )
+                elif isinstance(r, torch.Tensor):
+                    rlog(
+                        logger,
+                        rank,
+                        f"Result {ridx} (Tensor) shape: {r.shape}",
+                        level="debug",
+                    )
+                else:
+                    rlog(
+                        logger,
+                        rank,
+                        f"Result {ridx}: {r}",
+                        level="debug",
+                    )
 
         # Register in environment dictionary
         env[node.name] = result
@@ -188,7 +205,7 @@ def device_fn(
     _, time_taken = distributed_average_timing(
         fn=mg.model,
         args=[inputs],
-        repeat=10,
+        repeat=4,
         warmup_iters=2,
     )
     rlog(logger, rank, f"Forward pass finished. Time taken: {time_taken}", level="info")

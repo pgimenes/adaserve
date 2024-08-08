@@ -4,12 +4,12 @@ export BATCH_SIZE=8
 export SEQUENCE_LENGTH=128
 export MIP_REL_GAP=98
 
-echo "Running autosharding for ${MODEL} model..."
+echo "[EXAMPLES]: Running autosharding for ${MODEL} model..."
 
-python src/main.py \
+viztracer src/main.py \
+    --algo fully_replicated \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
     --from_config \
-    --pre_mp_autosharding \
     --batch_size $BATCH_SIZE \
     --sequence_length $SEQUENCE_LENGTH

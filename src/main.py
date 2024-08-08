@@ -64,7 +64,11 @@ def parse_args():
         "--algo",
         type=str,
         default="alpa",
-        choices=["alpa", "megatron"],
+        choices=[
+            "alpa",
+            "megatron",
+            "fully_replicated",
+        ],
         help="Algorithm to use for sharding the model.",
     )
     parser.add_argument(

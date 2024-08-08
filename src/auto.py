@@ -28,7 +28,7 @@ def get_cached_solution_fname(model_name, cli_args):
         if cli_arg is not None:
             solution_fname += f"{arg}_{cli_arg}_"
 
-    solution_fname += "solution.pkl"
+    solution_fname += "ilp_solution.pkl"
 
     return solution_fname
 
