@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 
-from nn.manual import ManualBatchLinear
+from ada.nn.manual import ManualBatchLinear
 
 vec = torch.randn(50)
 mat = torch.randn((10, 50))

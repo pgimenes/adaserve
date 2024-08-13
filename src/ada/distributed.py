@@ -1,6 +1,8 @@
 import os
 import torch
 from functools import partial
+import pandas as pd
+import time
 
 import torch.distributed as dist
 
@@ -16,7 +18,6 @@ from chop.distributed.utils import (
 import chop.passes as passes
 from chop.passes.graph.analysis.utils import fetch_attr, load_arg
 from chop.tools import get_logger
-from chop.nn.functional.dtensor import redistribute_dtensor
 
 from auto import autosharding_runner
 
@@ -131,7 +132,7 @@ def node_interpreter(rank, mg, inputs):
         env[node.name] = result
 
 
-def device_fn(
+def single_batch_device_fn(
     rank,
     world_size,
     device_mesh=None,
@@ -210,5 +211,161 @@ def device_fn(
     )
     rlog(logger, rank, f"Forward pass finished. Time taken: {time_taken}", level="info")
     # node_interpreter(rank, mg, inputs)
+
+    dist.destroy_process_group()
+
+
+def device_fn(
+    rank,
+    world_size,
+    device_mesh=None,
+    model_class=None,
+    model_config=None,
+    cli_args=None,
+):
+    """
+    This function gets called on each GPU device to set up the distributed environment and distribute the model,
+    following the SPMD model.
+    """
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    os.environ["RANK"] = str(rank)
+
+    # Initialize
+    dist.init_process_group(
+        "nccl",
+        rank=rank,
+        world_size=world_size,
+    )
+    device = torch.device("cuda", rank)
+    torch.cuda.set_device(device)
+
+    # Distribute model parameters according to sharding configuration
+    mesh = DeviceMesh(
+        "cuda",
+        mesh=device_mesh,
+    )
+
+    # Run the autosharding pass etc
+    dummy_in = torch.randn(
+        (
+            cli_args.batch_size,
+            cli_args.sequence_length,
+            model_config.hidden_size,
+        )
+    )
+    mg, pass_outputs = autosharding_runner(
+        model_class=model_class,
+        model_config=model_config,
+        args=cli_args,
+        inputs=dummy_in,
+    )
+
+    rlog(logger, rank, f"Distributing module parameters...", level="info")
+    mg.model, dist_time = distributed_timing(
+        distribute_module,
+        mg.model,
+        mesh,
+        partial(
+            dist_model_fn,
+            rank=rank,
+            tensor_sharding_map=pass_outputs["autosharding_analysis_pass"][
+                "tensor_sharding_map"
+            ],
+        ),
+        input_fn=None,
+        output_fn=None,
+    )
+    rlog(logger, rank, f"Module distribution done. Time taken: {dist_time} seconds.")
+
+    # Load dataset
+    ds = "AzureLLMInferenceTrace_conv_parsed.csv"
+    rlog(logger, rank, f"Loading dataset: {ds}", level="info")
+    df = pd.read_csv(f"src/datasets/{ds}")
+    df = df[:50]
+
+    # Get the sharding spec for the input tensor
+    for node in mg.fx_graph.nodes:
+        if node.op == "placeholder":
+            input_sharding = node.meta["mase"]["common"]["results"]["data_out_0"][
+                "dtensor_spec"
+            ].placements
+
+    start_time = time.time()
+    last_time = 0
+    while True:
+        elapsed_time = time.time() - start_time
+
+        if elapsed_time > df.iloc[-1]["TIMESTAMP"]:
+            break
+
+        # Step 1: Send/receive tensor size
+        if rank == 0:
+
+            # Filter rows between last_time and elapsed_time
+            filtered_df = df[df["TIMESTAMP"] < elapsed_time]
+            filtered_df = filtered_df[filtered_df["TIMESTAMP"] >= last_time]
+
+            # formulate a batch
+            bsz = len(filtered_df)
+            seq_len = filtered_df["ContextTokens"].max()
+            max_out_tokens = filtered_df["GeneratedTokens"].max()
+
+            if bsz == 0:
+                continue
+
+            random_batch = torch.randn(
+                (
+                    bsz,
+                    seq_len,
+                    model_config.hidden_size,
+                )
+            ).to(device)
+
+            tensor_size = torch.tensor(
+                random_batch.shape,
+                dtype=torch.long,
+            ).to(device)
+        else:
+            tensor_size = torch.empty(
+                3,
+                dtype=torch.long,
+            ).to(device)
+
+        # Broadcast the tensor size to all GPUs
+        dist.broadcast(tensor_size, src=0)
+        dist.barrier()
+
+        # Step 2: Create and receive the actual tensor
+        if rank != 0:
+            random_batch = torch.empty(tuple(tensor_size.tolist())).to(device)
+
+        dist.broadcast(random_batch, src=0)
+        dist.barrier()
+        if rank == 1:
+            print(f"Rank {rank} received tensor of shape {random_batch.shape}")
+
+        rlog(logger, rank, f"Sharding input to: {input_sharding}", level="debug")
+        distributed_inputs = distribute_tensor(
+            random_batch,
+            mesh,
+            input_sharding,
+        )
+
+        out = mg.model(distributed_inputs)
+        dist.barrier(async_op=True)
+        finish_time = time.time() - start_time
+
+        # node_interpreter(rank, mg, inputs)
+        rlog(
+            logger,
+            rank,
+            f"Forward pass finished. Time taken: {finish_time - elapsed_time}s",
+            level="info",
+        )
+
+        # To avoid going OoM
+        out = None
+        torch.cuda.empty_cache()
 
     dist.destroy_process_group()

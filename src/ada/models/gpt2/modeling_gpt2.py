@@ -45,7 +45,7 @@ from transformers.utils import (
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 from .configuration_gpt2 import GPT2Config
 
-from nn.manual import ManualLayerNorm, ManualBatchLinear, ManualLinear2D
+from ada.nn.manual import ManualLayerNorm, ManualBatchLinear, ManualLinear2D
 
 if is_flash_attn_2_available():
     from transformers.modeling_flash_attention_utils import _flash_attention_forward

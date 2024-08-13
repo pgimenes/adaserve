@@ -12,8 +12,8 @@ def excepthook(exc_type, exc_value, exc_traceback):
 sys.excepthook = excepthook
 
 import torch
-from models.gpt2.modeling_gpt2 import GPT2LMHeadModel
-from models.gpt2.configuration_gpt2 import GPT2Config
+from ada.models.gpt2.modeling_gpt2 import GPT2LMHeadModel
+from ada.models.gpt2.configuration_gpt2 import GPT2Config
 
 cf = GPT2Config.from_pretrained("/data/huggingface/nice-gpt2-1.5b")
 cf.activation_function = "gelu"
@@ -24,13 +24,9 @@ model = GPT2LMHeadModel(cf).to("cuda:0")
 elapsed_times = []
 for itr in range(10):
     print(f"Running iter: {itr}")
-    input_tensor = torch.randint(
-        1,
-        10000,
-        (8, 128),
-    ).to("cuda:0")
+    input_tensor = torch.randn((1, 128, 1536)).to("cuda:0")
     start_time = time.time()
-    out = model(input_tensor)
+    out = model(inputs_embeds=input_tensor)
     end_time = time.time()
     elapsed_times.append(end_time - start_time)
     print(f"Time taken: {end_time - start_time}s")
