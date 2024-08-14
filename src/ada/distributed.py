@@ -91,7 +91,10 @@ def node_interpreter(rank, mg, inputs):
                         level="debug",
                     )
 
-            result = node.target(*args, **kwargs)
+            try:
+                result = node.target(*args, **kwargs)
+            except:
+                torch.distributed.breakpoint(0)
 
             rlist = (result,) if not isinstance(result, (tuple, list)) else result
             for ridx, r in enumerate(rlist):
@@ -183,9 +186,6 @@ def single_batch_device_fn(
     )
     rlog(logger, rank, f"Module distribution done. Time taken: {dist_time} seconds.")
 
-    if rank == 0:
-        print(mg.model.code)
-
     # Run forward pass
     rlog(logger, rank, f"Starting forward pass.", level="info")
 
@@ -239,12 +239,12 @@ def device_fn(
     )
     device = torch.device("cuda", rank)
     torch.cuda.set_device(device)
-
-    # Distribute model parameters according to sharding configuration
     mesh = DeviceMesh(
         "cuda",
         mesh=device_mesh,
     )
+
+    NUM_REQUESTS = 50
 
     # Run the autosharding pass etc
     dummy_in = torch.randn(
@@ -281,8 +281,8 @@ def device_fn(
     # Load dataset
     ds = "AzureLLMInferenceTrace_conv_parsed.csv"
     rlog(logger, rank, f"Loading dataset: {ds}", level="info")
-    df = pd.read_csv(f"src/datasets/{ds}")
-    df = df[:50]
+    df = pd.read_csv(f"src/ada/datasets/{ds}")
+    df = df[:NUM_REQUESTS]
 
     # Get the sharding spec for the input tensor
     for node in mg.fx_graph.nodes:
@@ -292,28 +292,35 @@ def device_fn(
             ].placements
 
     start_time = time.time()
-    last_time = 0
+    left_time_ptr = 0
+    jcts = []
     while True:
-        elapsed_time = time.time() - start_time
+        right_time_ptr = time.time() - start_time
 
-        if elapsed_time > df.iloc[-1]["TIMESTAMP"]:
+        if left_time_ptr > df.iloc[NUM_REQUESTS - 1]["TIMESTAMP"]:
             break
 
-        # Step 1: Send/receive tensor size
+        # In rank 0, load batch from dataset using two pointer traversal
         if rank == 0:
+            # Filter rows between left_time_ptr and right_time_ptr
+            batch_df = df[df["TIMESTAMP"] < right_time_ptr]
+            batch_df = batch_df[batch_df["TIMESTAMP"] >= left_time_ptr]
 
-            # Filter rows between last_time and elapsed_time
-            filtered_df = df[df["TIMESTAMP"] < elapsed_time]
-            filtered_df = filtered_df[filtered_df["TIMESTAMP"] >= last_time]
+            # Formulate a batch
+            bsz = len(batch_df)
+            seq_len = batch_df["ContextTokens"].max()
 
-            # formulate a batch
-            bsz = len(filtered_df)
-            seq_len = filtered_df["ContextTokens"].max()
-            max_out_tokens = filtered_df["GeneratedTokens"].max()
-
+            # Exit if no requests are loaded yet
             if bsz == 0:
                 continue
 
+        # Synchronize with all processes to update the left_time_ptr
+        # which indicates the time at which computation starts
+        dist.barrier()
+        left_time_ptr = right_time_ptr
+
+        # Step 1: Send/receive tensor size
+        if rank == 0:
             random_batch = torch.randn(
                 (
                     bsz,
@@ -326,6 +333,13 @@ def device_fn(
                 random_batch.shape,
                 dtype=torch.long,
             ).to(device)
+
+            max_tokens_per_sequence = torch.tensor(
+                batch_df["GeneratedTokens"].tolist(),
+                dtype=torch.long,
+            ).to(device)
+
+            logger.debug(f"Formulated batch of size {random_batch.shape}")
         else:
             tensor_size = torch.empty(
                 3,
@@ -338,12 +352,16 @@ def device_fn(
 
         # Step 2: Create and receive the actual tensor
         if rank != 0:
-            random_batch = torch.empty(tuple(tensor_size.tolist())).to(device)
+            sizes = tensor_size.tolist()
+            random_batch = torch.empty(tuple(sizes)).to(device)
+            max_tokens_per_sequence = torch.empty(
+                sizes[0],
+                dtype=torch.long,
+            ).to(device)
 
         dist.broadcast(random_batch, src=0)
+        dist.broadcast(max_tokens_per_sequence, src=0)
         dist.barrier()
-        if rank == 1:
-            print(f"Rank {rank} received tensor of shape {random_batch.shape}")
 
         rlog(logger, rank, f"Sharding input to: {input_sharding}", level="debug")
         distributed_inputs = distribute_tensor(
@@ -352,20 +370,82 @@ def device_fn(
             input_sharding,
         )
 
-        out = mg.model(distributed_inputs)
-        dist.barrier(async_op=True)
-        finish_time = time.time() - start_time
+        try:
+            _ = mg.model(distributed_inputs)
 
-        # node_interpreter(rank, mg, inputs)
+            # Generation loop
+            # Currently not using KV cache
+            generated_tokens = 1
+            bsz = tensor_size[0]
+            out_tokens = max(max_tokens_per_sequence)
+
+            while generated_tokens < out_tokens:
+                new_tokens = torch.randn(
+                    (
+                        bsz,
+                        1,
+                        model_config.hidden_size,
+                    ),
+                    device=device,
+                )
+                concat_out = torch.cat((random_batch, new_tokens), dim=1)
+                distributed_inputs = distribute_tensor(
+                    concat_out,
+                    mesh,
+                    input_sharding,
+                )
+                out = mg.model(distributed_inputs)
+
+                generated_tokens += 1
+                rlog(
+                    logger,
+                    rank,
+                    f"Generated {generated_tokens} / {out_tokens} tokens",
+                    level="debug",
+                )
+
+            # node_interpreter(rank, mg, distributed_inputs,)
+
+            dist.barrier(async_op=True)
+            finish_time = time.time() - start_time
+
+            rlog(
+                logger,
+                rank,
+                f"Forward pass finished. Time taken: {finish_time - right_time_ptr}s",
+                level="debug",
+            )
+
+            if rank == 0:
+                batch_jcts = (finish_time - batch_df["TIMESTAMP"]).tolist()
+                jcts += batch_jcts
+
+        except torch.OutOfMemoryError:
+            rlog(
+                logger,
+                rank,
+                f"Batch went OoM, so all requests will be dropped. This will impact SLA.",
+                level="warning",
+            )
+
+        except Exception as e:
+            rlog(
+                logger,
+                rank,
+                f"Unknown exception while handling batch: {e}.",
+                level="error",
+            )
+            dist.destroy_process_group()
+
+        torch.cuda.empty_cache()
+
+    # Summarize results
+    if rank == 0:
         rlog(
             logger,
             rank,
-            f"Forward pass finished. Time taken: {finish_time - elapsed_time}s",
-            level="info",
+            f"SLA: {len(jcts) / NUM_REQUESTS}, Average JCT: {sum(jcts) / len(jcts)}",
+            level="warning",
         )
-
-        # To avoid going OoM
-        out = None
-        torch.cuda.empty_cache()
 
     dist.destroy_process_group()

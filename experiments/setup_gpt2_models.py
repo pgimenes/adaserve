@@ -22,6 +22,7 @@ for num_heads in num_head_list:
         n_layer=48,
         n_head=num_heads,
         n_embd=num_heads * HEAD_SIZE,
+        n_positions = 16384,
     )
     config.activation_function = "gelu"
     configs.append(config)
@@ -32,6 +33,7 @@ for num_heads in num_head_list:
         n_layer=96,
         n_head=num_heads,
         n_embd=num_heads * HEAD_SIZE,
+        n_positions = 16384,
     )
     config.activation_function = "gelu"
     configs.append(config)
@@ -44,12 +46,12 @@ for idx, config in enumerate(configs):
     )
 
     # Uncomment below to initialize quickly
-    with init_empty_weights():
-        model = GPT2LMHeadModel(config)
+    # with init_empty_weights():
+    model = GPT2LMHeadModel(config)
 
     # # Get parameter count
     params = sum(p.numel() for p in model.parameters())
     print(f"params: {params:,}")
 
-    # model.save_pretrained(f"{save_path}/{checkpoints[idx]}")
-    # tokenizer.save_pretrained(f"{save_path}/{checkpoints[idx]}")
+    model.save_pretrained(f"{save_path}/{checkpoints[idx]}")
+    tokenizer.save_pretrained(f"{save_path}/{checkpoints[idx]}")

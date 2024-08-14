@@ -98,10 +98,6 @@ def autosharding_runner(
                 "device_mesh": cli_args.device_mesh,
             },
         },
-        skip_passes=[
-            # passes.resharding_transform_pass,
-            passes.graph.analysis.report.report_parallelization_analysis_pass,
-        ],
     )
 
     # Skip drawing for larger graphs to reduce runtime

@@ -137,7 +137,7 @@ class GPT2Config(PretrainedConfig):
     def __init__(
         self,
         vocab_size=50257,
-        n_positions=1024,
+        n_positions=16384,
         n_embd=768,
         n_layer=12,
         n_head=12,

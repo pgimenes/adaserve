@@ -6,8 +6,9 @@ export MIP_REL_GAP=98
 
 echo "[EXAMPLES]: Running autosharding for ${MODEL} model..."
 
-viztracer src/main.py \
+python src/ada/main.py \
     --algo fully_replicated \
+    --preload \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
     --from_config \
