@@ -1,9 +1,11 @@
 import torch
+import numpy as np
 
 from chop import AutoPipelineForDistributedInference
 from chop.ir import MaseGraph
 from chop.tools import get_logger
 import chop.passes as passes
+from chop.distributed.utils import _get_mesh_from_world_size
 
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
@@ -36,23 +38,15 @@ def get_cached_solution_fname(model_name, cli_args):
 def autosharding_runner(
     model_class=None,
     model_config=None,
-    args=None,
+    cli_args=None,
     inputs=None,
 ):
 
-    cli_args = args
-
-    if cli_args.from_config:
-        model = model_class(model_config)
-    else:
+    # Get model
+    if cli_args.from_pretrained:
         model = model_class.from_pretrained(cli_args.checkpoint)
-
-    mg = MaseGraph(
-        model,
-        # Don't include embedding nodes in graph
-        hf_input_names=["inputs_embeds"],
-    )
-    pipeline = AutoPipelineForDistributedInference()
+    else:
+        model = model_class(model_config)
 
     model_name = (
         cli_args.checkpoint.replace("/", "-").replace(".", "-")
@@ -62,12 +56,28 @@ def autosharding_runner(
 
     model_name = model_name[1:] if model_name.startswith("-") else model_name
 
-    # Skip embedding layer
+    # Get mesh info
+    mesh_ids, mesh_shape = _get_mesh_from_world_size(cli_args.world_size)
+
+    # Generate MaseGraph
+    mg = MaseGraph(
+        model,
+        # Don't include embedding nodes in graph
+        hf_input_names=["inputs_embeds"],
+    )
+    pipeline = AutoPipelineForDistributedInference()
+
+    # Get dummy inputs
     if inputs is None:
         inputs = torch.randn(
-            (cli_args.batch_size, cli_args.sequence_length, model_config.hidden_size)
+            (
+                cli_args.batch_size,
+                cli_args.sequence_length,
+                model_config.hidden_size,
+            )
         )
 
+    # Run pipeline
     mg, pass_outputs = pipeline(
         mg,
         pass_args={
@@ -83,19 +93,19 @@ def autosharding_runner(
             },
             "autosharding_analysis_pass": {
                 "algo": cli_args.algo,
-                "mesh_shape": cli_args.mesh_shape,
-                "inter_node_bandwidth": 10e9,
-                "intra_node_bandwidth": 100e9,
-                "skip_fully_replicated": False,
+                "mesh_shape": mesh_shape,
+                "inter_node_bandwidth": cli_args.inter_node_bandwidth,
+                "intra_node_bandwidth": cli_args.intra_node_bandwidth,
+                "skip_fully_replicated": True,
                 "time_limit": cli_args.optimizer_time_limit,
                 "mip_rel_gap": cli_args.optimizer_mip_rel_gap,
-                "run_checks": False,
+                "run_checks": cli_args.debug,
                 "preload_solution": cli_args.preload,
                 "ilp_solution_file": get_cached_solution_fname(model_name, cli_args),
             },
             "resharding_transform_pass": {
                 "tensor_sharding_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
-                "device_mesh": cli_args.device_mesh,
+                "device_mesh": mesh_ids,
             },
         },
     )

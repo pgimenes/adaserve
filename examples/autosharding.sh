@@ -6,11 +6,10 @@ export MIP_REL_GAP=98
 
 echo "[EXAMPLES]: Running autosharding for ${MODEL} model..."
 
-python src/ada/main.py \
-    --algo fully_replicated \
+ada --algo alpa \
+    --num_hidden_layers 1 \
     --preload \
     --model $MODEL \
     --checkpoint $CHECKPOINT \
-    --from_config \
     --batch_size $BATCH_SIZE \
     --sequence_length $SEQUENCE_LENGTH

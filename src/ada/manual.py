@@ -15,6 +15,8 @@ from torch.distributed._tensor import (
     Shard,
 )
 
+from chop.distributed.utils import _get_mesh_from_world_size
+
 
 def pprint(rank, msg):
     if rank == 0:
@@ -83,7 +85,14 @@ def device_fn(
     device = torch.device("cuda", rank)
     torch.cuda.set_device(device)
     torch.cuda.set_per_process_memory_fraction(1.0, device)
-    mesh = DeviceMesh("cuda", mesh=cli_args.device_mesh)
+
+    mesh_ids, mesh_shape = _get_mesh_from_world_size(world_size)
+
+    mesh = DeviceMesh(
+        "cuda",
+        mesh=mesh_ids,
+    )
+
     torch.manual_seed(12)
     model = model_class(config).to(device)
     model = distribute_module(
@@ -95,14 +104,13 @@ def device_fn(
     )
 
     # Bert model skips embedding layer
-    if cli_args.model in ["bert", "toy"]:
-        in_data = torch.randn(
-            (cli_args.batch_size, cli_args.sequence_length, config.hidden_size)
-        ).to(device)
-    else:
-        in_data = torch.randint(
-            0, config.vocab_size, (cli_args.batch_size, cli_args.sequence_length)
-        ).to(device)
+    in_data = torch.randn(
+        (
+            cli_args.batch_size,
+            cli_args.sequence_length,
+            config.hidden_size,
+        )
+    ).to(device)
 
     in_data = distribute_tensor(in_data, mesh, input_sharding)
     pprint(rank, f"\n================= RUNNING.... \n")
@@ -116,7 +124,7 @@ def manual_sharding_runner(model_class, model_config, args):
     elif args.column:
         opts = [(Shard(1), Replicate())]
     else:
-        opts = itertools.product([Replicate(), Shard(0), Shard(1)], repeat=2)
+        return
 
     success, fail = [], []
     for sharding in opts:

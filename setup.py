@@ -18,4 +18,9 @@ setup(
     },
     packages=find_packages("src"),
     install_requires=requirements,
+    entry_points={
+        "console_scripts": [
+            "ada=ada.main:main",
+        ],
+    },
 )

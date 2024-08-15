@@ -19,10 +19,10 @@ import chop.passes as passes
 from chop.passes.graph.analysis.utils import fetch_attr, load_arg
 from chop.tools import get_logger
 
-from auto import autosharding_runner
+from ada.auto import autosharding_runner
 
 logger = get_logger(__name__)
-logger.setLevel("INFO")
+logger.setLevel("DEBUG")
 
 
 def node_interpreter(rank, mg, inputs):
@@ -163,7 +163,7 @@ def single_batch_device_fn(
     mg, pass_outputs = autosharding_runner(
         model_class=model_class,
         model_config=model_config,
-        args=cli_args,
+        cli_args=cli_args,
         inputs=inputs,
     )
 
@@ -203,19 +203,26 @@ def single_batch_device_fn(
         input_sharding,
     )
 
-    _, time_taken = distributed_average_timing(
-        fn=mg.model,
-        args=[inputs],
-        repeat=4,
-        warmup_iters=2,
-    )
-    rlog(logger, rank, f"Forward pass finished. Time taken: {time_taken}", level="info")
-    # node_interpreter(rank, mg, inputs)
+    if cli_args.debug:
+        node_interpreter(rank, mg, inputs)
+    else:
+        _, time_taken = distributed_average_timing(
+            fn=mg.model,
+            args=[inputs],
+            repeat=4,
+            warmup_iters=2,
+        )
+        rlog(
+            logger,
+            rank,
+            f"Forward pass finished. Time taken: {time_taken}",
+            level="info",
+        )
 
     dist.destroy_process_group()
 
 
-def device_fn(
+def serving_device_fn(
     rank,
     world_size,
     device_mesh=None,
@@ -257,7 +264,7 @@ def device_fn(
     mg, pass_outputs = autosharding_runner(
         model_class=model_class,
         model_config=model_config,
-        args=cli_args,
+        cli_args=cli_args,
         inputs=dummy_in,
     )
 
@@ -371,54 +378,59 @@ def device_fn(
         )
 
         try:
-            _ = mg.model(distributed_inputs)
-
-            # Generation loop
-            # Currently not using KV cache
-            generated_tokens = 1
-            bsz = tensor_size[0]
-            out_tokens = max(max_tokens_per_sequence)
-
-            while generated_tokens < out_tokens:
-                new_tokens = torch.randn(
-                    (
-                        bsz,
-                        1,
-                        model_config.hidden_size,
-                    ),
-                    device=device,
+            if cli_args.debug:
+                node_interpreter(
+                    rank,
+                    mg,
+                    distributed_inputs,
                 )
-                concat_out = torch.cat((random_batch, new_tokens), dim=1)
-                distributed_inputs = distribute_tensor(
-                    concat_out,
-                    mesh,
-                    input_sharding,
-                )
-                out = mg.model(distributed_inputs)
+            else:
+                _ = mg.model(distributed_inputs)
 
-                generated_tokens += 1
+                # Generation loop
+                # Currently not using KV cache
+                generated_tokens = 1
+                bsz = tensor_size[0]
+                out_tokens = max(max_tokens_per_sequence)
+
+                while generated_tokens < out_tokens:
+                    new_tokens = torch.randn(
+                        (
+                            bsz,
+                            1,
+                            model_config.hidden_size,
+                        ),
+                        device=device,
+                    )
+                    concat_out = torch.cat((random_batch, new_tokens), dim=1)
+                    distributed_inputs = distribute_tensor(
+                        concat_out,
+                        mesh,
+                        input_sharding,
+                    )
+                    out = mg.model(distributed_inputs)
+
+                    generated_tokens += 1
+                    rlog(
+                        logger,
+                        rank,
+                        f"Generated {generated_tokens} / {out_tokens} tokens",
+                        level="debug",
+                    )
+
+                dist.barrier(async_op=True)
+                finish_time = time.time() - start_time
+
                 rlog(
                     logger,
                     rank,
-                    f"Generated {generated_tokens} / {out_tokens} tokens",
+                    f"Forward pass finished. Time taken: {finish_time - right_time_ptr}s",
                     level="debug",
                 )
 
-            # node_interpreter(rank, mg, distributed_inputs,)
-
-            dist.barrier(async_op=True)
-            finish_time = time.time() - start_time
-
-            rlog(
-                logger,
-                rank,
-                f"Forward pass finished. Time taken: {finish_time - right_time_ptr}s",
-                level="debug",
-            )
-
-            if rank == 0:
-                batch_jcts = (finish_time - batch_df["TIMESTAMP"]).tolist()
-                jcts += batch_jcts
+                if rank == 0:
+                    batch_jcts = (finish_time - batch_df["TIMESTAMP"]).tolist()
+                    jcts += batch_jcts
 
         except torch.OutOfMemoryError:
             rlog(

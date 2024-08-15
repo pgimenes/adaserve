@@ -9,8 +9,8 @@ import numpy as np
 
 from chop.tools import get_logger
 
-from auto import autosharding_runner
-from plot import plot_bs_seq_len
+from ada.auto import autosharding_runner
+from ada.plot import plot_bs_seq_len
 
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
