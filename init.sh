@@ -1,3 +1,8 @@
+# Cleanup torch and transformers installation
+pip uninstall -y torch torchvision torchaudio transformers
+
+# Install nightly torch
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
 
 # Transformers nightly
 echo "Installing transformers from source..."

@@ -1,56 +1,47 @@
+import os
 from copy import copy
 import itertools
+import concurrent
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
 from pathlib import Path
-import re
 
 import numpy as np
 
 from chop.tools import get_logger
 
-from ada.auto import autosharding_runner
-from ada.plot import plot_bs_seq_len
+from ada.cli import parse_args
 
 logger = get_logger(__name__)
 logger.setLevel("DEBUG")
 
 
-def autosharding_runner_wrapper(model_class=None, model_config=None, args=None):
-    """
-    Pick the outputs we want from the autosharding_analysis_pass
-    """
-    _, out = autosharding_runner(model_class, model_config, args)
-    return (
-        (args.batch_size, args.sequence_length),
-        out["autosharding_analysis_pass"]["solution"],
-    )
-
-
 def evaluate_grid_point(args):
     bs, seq_len = args.grid_point
     log_filename = f"experiments/sweep/sweep_{args.model}_layers_{args.num_hidden_layers}_bs_{bs}_seq_len_{seq_len}.log"
+
     command = [
-        "python",
-        "src/main.py",
-        "--auto",
-        "--skip-forward",
+        "ada",
+        "--skip_forward",
         # Model config
         "--model",
         str(args.model),
-        "--num_hidden_layers",
-        str(args.num_hidden_layers),
+        "--checkpoint",
+        str(args.checkpoint),
         "--batch_size",
         str(bs),
         "--sequence_length",
         str(seq_len),
         # Optimizer args
-        "--optimizer_profile",
         "--optimizer_time_limit",
         str(args.optimizer_time_limit),
         "--optimizer_mip_rel_gap",
         str(args.optimizer_mip_rel_gap),
+        "--benchmarking_device",
+        str(args.thread_offset),
     ]
+
+    logger.info(f"Launching command: {' '.join(command)}")
 
     try:
         with open(log_filename, "w") as file:
@@ -61,27 +52,19 @@ def evaluate_grid_point(args):
                 stderr=subprocess.STDOUT,
             )
 
-        # Extract solution from logfile with regex to match
-        # Autosharding pass complete. Time taken: 10.546476125717163 seconds. Solution: 4001085.363838052
-        with open(log_filename, "r") as file:
-            for line in file:
-                if "Autosharding pass complete" in line:
-                    pattern = r"[-+]?\d*\.\d+|\d+"
-                    floats = [i for i in re.findall(pattern, line) if "." in i]
-                    solution = floats[-1]
-                    return ((bs, seq_len), float(solution))
-
     except subprocess.CalledProcessError as e:
         logger.warning(f"Grid point {bs} failed with error: {e}")
         return None
 
 
-def sweep_runner(model_class=None, model_config=None, args=None):
+def sweep_runner(args=None):
     # Create experiments output directory if it doesn't exist
     Path("experiments/sweep").mkdir(parents=True, exist_ok=True)
 
     bs_range = np.linspace(
-        start=args.sweep_min_bs, stop=args.sweep_max_bs, num=args.sweep_grid_size
+        start=args.sweep_min_bs,
+        stop=args.sweep_max_bs,
+        num=args.sweep_grid_size,
     ).astype(int)
 
     seq_len_range = np.linspace(
@@ -93,30 +76,59 @@ def sweep_runner(model_class=None, model_config=None, args=None):
     grid = [i for i in itertools.product(bs_range, seq_len_range)]
 
     with ThreadPoolExecutor(max_workers=args.sweep_max_threads) as executor:
+        # Keep track of active thread offsets
+        active_offsets = set()
+        futures = []
 
         # Launch trials
-        futures = []
-        for grid_point in grid:
+        for idx, grid_point in enumerate(grid):
+            thread_offset = idx % args.sweep_max_threads
+
+            logger.info(
+                f"Launching grid point {grid_point} with thread offset {thread_offset}"
+            )
+
+            # Wait until the thread_offset is available
+            while thread_offset in active_offsets:
+                # Check if any futures have completed
+                done, _ = concurrent.futures.wait(
+                    futures,
+                    timeout=0.1,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for future in done:
+                    futures.remove(future)
+                    active_offsets.remove(future.thread_offset)
+
+            # Launch new thread
             nargs = copy(args)
             setattr(nargs, "grid_point", grid_point)
-            futures.append(executor.submit(evaluate_grid_point, nargs))
+            setattr(nargs, "thread_offset", thread_offset)
+            future = executor.submit(evaluate_grid_point, nargs)
+            future.thread_offset = thread_offset  # Attach thread_offset to the future
+            futures.append(future)
+            active_offsets.add(thread_offset)
 
-        # Process trial outputs
+        # Process remaining trial outputs
         results = []
         for future in as_completed(futures):
             try:
                 res = future.result()
-                logger.debug(
+                logger.info(
                     f"({len(results)}/{len(grid)}): Finished grid point {res[0]} with solution {res[1]}"
                 )
                 results.append(res)
             except Exception as e:
-                logger.warning(f"An error occurred: {e}")
+                logger.warning(f"({len(results)}/{len(grid)}): An error occurred: {e}")
+            finally:
+                active_offsets.remove(future.thread_offset)
 
-    # Save results to csv file
-    with open("experiments/sweep/sweep_results.csv", "w") as file:
-        for result in results:
-            file.write(f"{result[0][0]},{result[0][1]},{result[1]}\n")
+    return results
 
-    # Make bs/slen/solution plot
-    plot_bs_seq_len(results)
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    sweep_runner(
+        args=args,
+    )

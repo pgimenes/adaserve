@@ -102,6 +102,7 @@ def autosharding_runner(
                 "run_checks": cli_args.debug,
                 "preload_solution": cli_args.preload,
                 "ilp_solution_file": get_cached_solution_fname(model_name, cli_args),
+                "benchmarking_device": cli_args.benchmarking_device,
             },
             "resharding_transform_pass": {
                 "tensor_sharding_map": "self/autosharding_analysis_pass",  # output of autosharding_analysis_pass is directed to resharding_transform_pass
