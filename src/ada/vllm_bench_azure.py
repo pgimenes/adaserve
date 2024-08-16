@@ -20,6 +20,7 @@ class Request:
     context_tokens: int
     response_tokens: int
     finish_timestamp: float = 0.0
+    actual_response_tokens: int = 0
     
 
     @classmethod
@@ -32,7 +33,6 @@ class Request:
         )
 
 def load_dataset(path):
-    # load 
     dataset = []
     with open(path, "r") as f:
         csv_reader = csv.reader(f)
@@ -44,7 +44,7 @@ def load_dataset(path):
 def dump_results(dataset, path):
     with open(path, "w") as f:
         csv_writer = csv.writer(f)
-        csv_writer.writerow(["id", "receive_timestamp", "context_tokens", "response_tokens", "finish_timestamp"])
+        csv_writer.writerow(["id", "receive_timestamp", "context_tokens", "response_tokens", "finish_timestamp", "actual_response_tokens"])
         for request in dataset:
             csv_writer.writerow([
                 request.id,
@@ -52,91 +52,61 @@ def dump_results(dataset, path):
                 request.context_tokens,
                 request.response_tokens,
                 request.finish_timestamp,
+                request.actual_response_tokens,
             ])
 
-def make_request_batches(dataset : list, args):
-    # devide dataset criteria
-    # 1. number requests
-    # 2. time window 
-    # 3. max input tokens
+with open("prompt.txt", "r") as f:
+    prompt = f.read()
 
-    result = []
-    
-    batch = []
-    n_reqs = 0
-    prev_time = 0.0
-    cur_tokens = 0
-    make_batch_flag = False
-
-    while len(dataset) > 0:
-        request = dataset.pop(0)
-        n_reqs += 1
-        cur_tokens += request.context_tokens
-        diff_time = request.receive_timestamp - prev_time
-        batch.append(request)
-
-        if n_reqs >= args.max_requests:
-            make_batch_flag = True
-        if diff_time >= args.time_window:
-            make_batch_flag = True
-        if cur_tokens >= args.max_input_tokens:
-            make_batch_flag = True
-
-        if make_batch_flag:
-            result.append(batch)
-            batch = []
-            n_reqs = 0
-            prev_time = request.receive_timestamp
-            cur_tokens = 0
-            make_batch_flag = False
-    return result
-
-
-def make_token_batch(request_batch, tokenizer):
-    with open("prompt.txt", "r") as f:
-        prompt = f.read()
+def to_tokens(length, tokenizer):
     token_prompt = TokensPrompt(prompt_token_ids= tokenizer.encode(prompt))
-    token_batch = []
-    max_response_tokens = 0
-    for request in request_batch:
-        token_batch.append({
-            "prompt_token_ids": token_prompt["prompt_token_ids"][:request.context_tokens]
-        })
-        max_response_tokens = max(max_response_tokens, request.response_tokens)
-    return token_batch, max_response_tokens
+    return {"prompt_token_ids": token_prompt["prompt_token_ids"][:length]}
 
-def measure_batch_latency(model, token_batch, max_response_tokens):
-    sample_params = SamplingParams(
-        max_tokens=max_response_tokens
-    )
 
-    start_time = time.time()
-    result = model.generate(
-        prompts=token_batch,
-        sampling_params=sample_params,
-    )
-    logger.debug("Result", result)
-    print(result)
-    end_time = time.time()
+
+def process_all(model, dataset, args):
+    engine = model.llm_engine
+    tokenizer = engine.get_tokenizer()
+    id = 0
     
-    return end_time - start_time
+    engine_requests = []
+    
+    for request in dataset:
+        request = dataset[id]
+        tokens = to_tokens(request.context_tokens, tokenizer)
+        sampling_params = SamplingParams(
+            max_tokens=request.response_tokens,
+        )
+        engine_requests.append((
+            id, tokens, sampling_params, request.receive_timestamp
+        ))
+        id += 1
+    
+    base_time = time.time()
+    # print(f"Base time {base_time}")
 
+    while True:
+        if engine_requests:
+            id, tokens, sampling_params, td = engine_requests[0]
+            cur_time = time.time()
+            cur_td = cur_time - base_time
+            if td <= cur_td:
+                # print(f"Adding request {id} at {cur_td}, {td}")
+                engine.add_request(str(id), tokens, sampling_params)
+                engine_requests.pop(0)
 
-def measure_total_time(model, dataset, tokenizer, args):
-    request_batches = make_request_batches(dataset, args)
-
-    curr_time = 0.0
-    for request_batch in request_batches:
-        logger.info(f"Batch {request_batch}")
-        token_batch, max_response_tokens = make_token_batch(request_batch, tokenizer)
-        batch_issue_time = max(request_batch[-1].receive_timestamp, curr_time)
-        logger.info(f"Issue time {batch_issue_time}")
-        logger.info(f"max_respose_tokens {max_response_tokens}")
-        latency = measure_batch_latency(model, token_batch, max_response_tokens)
-        logger.info(f"Latency {latency}")
-        curr_time = batch_issue_time + latency
-        for request in request_batch:
-            request.finish_timestamp = curr_time
+        request_output = engine.step()
+        for o in request_output:
+            if o.finished:
+                dataset[int(o.request_id)].actual_response_tokens = len(o.outputs[0].token_ids)
+                dataset[int(o.request_id)].finish_timestamp = o.metrics.finished_time - base_time
+                # print(o)
+                # print(dataset[int(o.request_id)])
+                # print(time.time() - base_time)
+            
+        if not (engine.has_unfinished_requests() or engine_requests):
+            break
+    
     return dataset
 
 def load_model(args) -> LLM:
@@ -172,13 +142,9 @@ def evaluate(args):
 
     model = load_model(args)
     dataset = load_dataset(args.dataset_path)
-    tokenizer = model.llm_engine.get_tokenizer()
+    dataset = process_all(model, dataset, args)
 
-    dataset = measure_total_time(model, dataset, tokenizer, args)
-
-    for i in dataset:
-        print(i)
-
+    dump_results(dataset, args.output_path)
 
 def main(args):
     evaluate(args)
@@ -199,6 +165,7 @@ def cli():
     )
 
     # Environment
+    # parser.add_argument("--huggingface_cache", type=str, default="/data/huggingface/")
     parser.add_argument(
         "--seed",
         type=int,
@@ -238,6 +205,7 @@ def cli():
 
 
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = cli()
