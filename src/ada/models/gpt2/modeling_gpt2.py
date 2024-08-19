@@ -1318,7 +1318,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
 
-        lm_logits = self.lm_head(hidden_states)
+        # lm_logits = self.lm_head(hidden_states)
+        lm_logits = None
 
         loss = None
         if labels is not None:
@@ -1333,18 +1334,19 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
                 shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
             )
 
-        if not return_dict:
-            output = (lm_logits,) + transformer_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
+        # if not return_dict:
+        #     output = (lm_logits,) + transformer_outputs[1:]
+        #     return ((loss,) + output) if loss is not None else output
 
-        return CausalLMOutputWithCrossAttentions(
-            loss=loss,
-            logits=lm_logits,
-            past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
-            cross_attentions=transformer_outputs.cross_attentions,
-        )
+        # return CausalLMOutputWithCrossAttentions(
+        #     loss=loss,
+        #     logits=lm_logits,
+        #     past_key_values=transformer_outputs.past_key_values,
+        #     hidden_states=transformer_outputs.hidden_states,
+        #     attentions=transformer_outputs.attentions,
+        #     cross_attentions=transformer_outputs.cross_attentions,
+        # )
+        return hidden_states
 
     @staticmethod
     def _reorder_cache(
