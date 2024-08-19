@@ -35,7 +35,6 @@ def evaluate(args):
             enforce_eager=True,
             trust_remote_code=True,
             dtype=torch.float32,
-            # skip_tokenizer_init=True,
         )
     else:
         model = LLM(
@@ -43,27 +42,22 @@ def evaluate(args):
             seed=args.seed,
             enforce_eager=True,
             dtype=torch.float32,
-            # skip_tokenizer_init=True,
         )
 
     # generate the fake dataset
     # load test prompt from prompt.txt for now
-    with open("prompt.txt", "r") as f:
+    with open("experiments/prompt.txt", "r") as f:
         prompt = f.read()
     prompt = prompt[
         : args.input_sequence_length
     ]  # truncate based on tokenizer instead?
     prompts = [prompt] * args.batch_size
 
-    tokenized_inputs = torch.randint(
-        0, 50256, (args.batch_size, args.input_sequence_length)
-    ).tolist()
-
     sampling_params = SamplingParams(
         seed=args.seed,
         temperature=1.0,
         top_p=1.0,
-        max_tokens=1,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
+        max_tokens=10,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
         detokenize=False,
     )
 

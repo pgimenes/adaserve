@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 DATASET_PATH = "src/ada/datasets/AzureLLMInferenceTrace_conv_parsed.csv"
 
+
 @dataclass
 class Request:
     id: int
@@ -21,7 +22,6 @@ class Request:
     response_tokens: int
     finish_timestamp: float = 0.0
     actual_response_tokens: int = 0
-    
 
     @classmethod
     def from_csv_row(cls, row):
@@ -32,6 +32,7 @@ class Request:
             response_tokens=int(row[3]),
         )
 
+
 def load_dataset(path):
     dataset = []
     with open(path, "r") as f:
@@ -41,49 +42,68 @@ def load_dataset(path):
             dataset.append(Request.from_csv_row(row))
     return dataset
 
+
 def dump_results(dataset, path):
     with open(path, "w") as f:
         csv_writer = csv.writer(f)
-        csv_writer.writerow(["id", "receive_timestamp", "context_tokens", "response_tokens", "finish_timestamp", "actual_response_tokens"])
+        csv_writer.writerow(
+            [
+                "id",
+                "receive_timestamp",
+                "context_tokens",
+                "response_tokens",
+                "finish_timestamp",
+                "actual_response_tokens",
+            ]
+        )
         for request in dataset:
-            csv_writer.writerow([
-                request.id,
-                request.receive_timestamp,
-                request.context_tokens,
-                request.response_tokens,
-                request.finish_timestamp,
-                request.actual_response_tokens,
-            ])
+            csv_writer.writerow(
+                [
+                    request.id,
+                    request.receive_timestamp,
+                    request.context_tokens,
+                    request.response_tokens,
+                    request.finish_timestamp,
+                    request.actual_response_tokens,
+                ]
+            )
 
-with open("prompt.txt", "r") as f:
+
+with open("experiments/prompt.txt", "r") as f:
     prompt = f.read()
 
-def to_tokens(length, tokenizer):
-    token_prompt = TokensPrompt(prompt_token_ids= tokenizer.encode(prompt))
-    return {"prompt_token_ids": token_prompt["prompt_token_ids"][:length]}
 
+def to_tokens(length, tokenizer):
+    token_prompt = TokensPrompt(prompt_token_ids=tokenizer.encode(prompt))
+    return {"prompt_token_ids": token_prompt["prompt_token_ids"][:length]}
 
 
 def process_all(model, dataset, args):
     engine = model.llm_engine
     tokenizer = engine.get_tokenizer()
     id = 0
-    
+
     engine_requests = []
-    
+
     for request in dataset:
         request = dataset[id]
         tokens = to_tokens(request.context_tokens, tokenizer)
         sampling_params = SamplingParams(
             max_tokens=request.response_tokens,
         )
-        engine_requests.append((
-            id, tokens, sampling_params, request.receive_timestamp
-        ))
+        print(f"Adding request {id}")
+        engine_requests.append(
+            (
+                id,
+                tokens,
+                sampling_params,
+                request.receive_timestamp,
+            )
+        )
         id += 1
-    
+
     base_time = time.time()
-    # print(f"Base time {base_time}")
+    print(f"Base time {base_time}")
 
     while True:
         if engine_requests:
@@ -91,26 +111,31 @@ def process_all(model, dataset, args):
             cur_time = time.time()
             cur_td = cur_time - base_time
             if td <= cur_td:
-                # print(f"Adding request {id} at {cur_td}, {td}")
+                print(f"Adding request {id} at {cur_td}, {td}")
                 engine.add_request(str(id), tokens, sampling_params)
                 engine_requests.pop(0)
 
         request_output = engine.step()
         for o in request_output:
             if o.finished:
-                dataset[int(o.request_id)].actual_response_tokens = len(o.outputs[0].token_ids)
-                dataset[int(o.request_id)].finish_timestamp = o.metrics.finished_time - base_time
+                dataset[int(o.request_id)].actual_response_tokens = len(
+                    o.outputs[0].token_ids
+                )
+                dataset[int(o.request_id)].finish_timestamp = (
+                    o.metrics.finished_time - base_time
+                )
                 # print(o)
                 # print(dataset[int(o.request_id)])
                 # print(time.time() - base_time)
-            
+
         if not (engine.has_unfinished_requests() or engine_requests):
             break
-    
+
     return dataset
 
+
 def load_model(args) -> LLM:
-        # Load model
+    # Load model
     dtype = torch.float32
     if args.datatype == "float16":
         dtype = torch.float16
@@ -139,12 +164,12 @@ def evaluate(args):
     logger.info(f"Evaluating model: {args.model_name}")
     logger.info(f"Tensor Parallel: {args.tensor_parallel}")
 
-
     model = load_model(args)
     dataset = load_dataset(args.dataset_path)
     dataset = process_all(model, dataset, args)
 
     dump_results(dataset, args.output_path)
+
 
 def main(args):
     evaluate(args)
@@ -201,8 +226,6 @@ def cli():
         type=str,
         default="output.csv",
     )
-
-
 
     return parser.parse_args()
 

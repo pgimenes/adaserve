@@ -12,7 +12,7 @@ setup(
     author="Pedro Gimenes",
     author_email="pedro.gimenes19@imperial.ac.uk",
     license_files=("LICENSE",),
-    python_requires=">=3.11.4",
+    python_requires=">=3.10.2",
     package_dir={
         "": "src",
     },

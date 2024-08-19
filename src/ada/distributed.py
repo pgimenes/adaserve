@@ -157,9 +157,24 @@ def single_batch_device_fn(
     torch.cuda.set_device(device)
 
     # Run the autosharding pass etc
-    inputs = torch.randn(
-        (cli_args.batch_size, cli_args.sequence_length, model_config.hidden_size)
-    )
+    inputs = {
+        "input_ids": torch.randint(
+            0,
+            50256,
+            (
+                cli_args.batch_size,
+                cli_args.sequence_length,
+            ),
+        ),
+        "position_ids": torch.arange(
+            0,
+            cli_args.sequence_length,
+            dtype=torch.long,
+        ),
+        "kv_caches": torch.randn(10),
+        "attn_metadata": torch.randn(10),
+        "intermediate_tensors": torch.randn(10),
+    }
     mg, pass_outputs = autosharding_runner(
         model_class=model_class,
         model_config=model_config,
@@ -191,16 +206,26 @@ def single_batch_device_fn(
 
     # Get the sharding spec for the input tensor
     for node in mg.fx_graph.nodes:
-        if node.op == "placeholder":
-            input_sharding = node.meta["mase"]["common"]["results"]["data_out_0"][
+        if node.name == "input_ids":
+            input_ids_sharding = node.meta["mase"]["common"]["results"]["data_out_0"][
                 "dtensor_spec"
             ].placements
 
-    rlog(logger, rank, f"Sharding input to: {input_sharding}", level="debug")
-    inputs = distribute_tensor(
-        inputs,
+        if node.name == "position_ids":
+            position_ids_sharding = node.meta["mase"]["common"]["results"][
+                "data_out_0"
+            ]["dtensor_spec"].placements
+
+    rlog(logger, rank, f"Sharding input to: {input_ids_sharding}", level="debug")
+    input_ids = distribute_tensor(
+        inputs["input_ids"],
         mesh,
-        input_sharding,
+        input_ids_sharding,
+    )
+    position_ids = distribute_tensor(
+        inputs["position_ids"],
+        mesh,
+        position_ids_sharding,
     )
 
     if cli_args.debug:
@@ -208,7 +233,13 @@ def single_batch_device_fn(
     else:
         _, time_taken = distributed_average_timing(
             fn=mg.model,
-            args=[inputs],
+            args={
+                "input_ids": input_ids,
+                "position_ids": position_ids,
+                "kv_caches": inputs["kv_caches"],
+                "attn_metadata": inputs["attn_metadata"],
+                "intermediate_tensors": inputs["intermediate_tensors"],
+            },
             repeat=4,
             warmup_iters=2,
         )
@@ -254,18 +285,10 @@ def serving_device_fn(
     NUM_REQUESTS = 50
 
     # Run the autosharding pass etc
-    dummy_in = torch.randn(
-        (
-            cli_args.batch_size,
-            cli_args.sequence_length,
-            model_config.hidden_size,
-        )
-    )
     mg, pass_outputs = autosharding_runner(
         model_class=model_class,
         model_config=model_config,
         cli_args=cli_args,
-        inputs=dummy_in,
     )
 
     rlog(logger, rank, f"Distributing module parameters...", level="info")

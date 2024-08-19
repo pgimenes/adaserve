@@ -63,19 +63,37 @@ def autosharding_runner(
     mg = MaseGraph(
         model,
         # Don't include embedding nodes in graph
-        hf_input_names=["inputs_embeds"],
+        hf_input_names=[
+            "input_ids",
+            "position_ids",
+            "kv_caches",
+            "attn_metadata",
+            "intermediate_tensors",
+        ],
     )
+
     pipeline = AutoPipelineForDistributedInference()
 
     # Get dummy inputs
     if inputs is None:
-        inputs = torch.randn(
-            (
-                cli_args.batch_size,
+        inputs = {
+            "input_ids": torch.randint(
+                0,
+                50256,
+                (
+                    cli_args.batch_size,
+                    cli_args.sequence_length,
+                ),
+            ),
+            "position_ids": torch.arange(
+                0,
                 cli_args.sequence_length,
-                model_config.hidden_size,
-            )
-        )
+                dtype=torch.long,
+            ),
+            "kv_caches": torch.randn(10),
+            "attn_metadata": torch.randn(10),
+            "intermediate_tensors": torch.randn(10),
+        }
 
     # Run pipeline
     mg, pass_outputs = pipeline(
@@ -86,9 +104,7 @@ def autosharding_runner(
             },
             "add_common_metadata_analysis_pass": {
                 # TO DO: change key according to model (non-HuggingFace)
-                "dummy_in": {
-                    "inputs_embeds": inputs,
-                },
+                "dummy_in": inputs,
                 "add_value": True,
             },
             "autosharding_analysis_pass": {
@@ -96,7 +112,7 @@ def autosharding_runner(
                 "mesh_shape": mesh_shape,
                 "inter_node_bandwidth": cli_args.inter_node_bandwidth,
                 "intra_node_bandwidth": cli_args.intra_node_bandwidth,
-                "skip_fully_replicated": True,
+                "skip_fully_replicated": False,
                 "time_limit": cli_args.optimizer_time_limit,
                 "mip_rel_gap": cli_args.optimizer_mip_rel_gap,
                 "run_checks": cli_args.debug,
