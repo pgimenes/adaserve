@@ -2,3 +2,6 @@
 	path = mase
 	url = https://github.com/DeepWok/mase.git
 	branch = research/alpa-light
+[submodule "vllm"]
+	path = vllm
+	url = https://github.com/pgimenes/vllm.git
