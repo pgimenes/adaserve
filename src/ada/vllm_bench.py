@@ -24,7 +24,14 @@ def evaluate(args):
     if args.huggingface_cache:
         os.environ["HF_HOME"] = args.huggingface_cache
 
-    # figure out the way to use hf to directly load model and tokenizer(see documnet example)
+    # sharding config
+    sharding_config = {}
+    for layer in range(48):
+        sharding_config[f"transformer.h.{layer}.attn.c_attn"] = "replicated"
+        sharding_config[f"transformer.h.{layer}.attn.attn"] = "replicated"
+        sharding_config[f"transformer.h.{layer}.attn.c_proj"] = "replicated"
+        sharding_config[f"transformer.h.{layer}.mlp.c_fc"] = "replicated"
+        sharding_config[f"transformer.h.{layer}.mlp.c_proj"] = "replicated"
 
     # Load model
     if args.tensor_parallel > 1:
@@ -35,6 +42,7 @@ def evaluate(args):
             enforce_eager=True,
             trust_remote_code=True,
             dtype=torch.float32,
+            sharding_config=sharding_config,
         )
     else:
         model = LLM(

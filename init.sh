@@ -39,3 +39,7 @@ cd mase
 git checkout research/alpa-light
 pip install -e .
 cd ..
+
+# Setup models
+echo "Setting up models for experiments..."
+python experiments/setup_gpt2_models.py --save_path $ADASERVE_CHECKPOINTS_PATH

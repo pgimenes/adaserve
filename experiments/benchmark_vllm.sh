@@ -1,5 +1,5 @@
-export CHECKPOINT=/data/huggingface/nice-gpt2-1.5b
-export TENSOR_PARALLEL=8
+export CHECKPOINT=$ADASERVE_CHECKPOINTS_PATH/nice-gpt2-1.5b
+export TENSOR_PARALLEL=$(nvidia-smi --list-gpus | wc -l)
 export BATCH_SIZE=8
 export SEQUENCE_LENGTH=128
 
