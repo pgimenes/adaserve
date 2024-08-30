@@ -88,19 +88,19 @@ if __name__ == "__main__":
     except RuntimeError:
         pass  # In case it's already set
 
-    shape = SHAPES[0]
-    result_queue = Queue()
-    mp.spawn(
-        test_op,
-        args=(
-            result_queue,
-            shape,
-        ),
-        nprocs=WORLD_SIZE,
-        join=True,
-    )
+    for shape in SHAPES:
+        result_queue = Queue()
+        mp.spawn(
+            test_op,
+            args=(
+                result_queue,
+                shape,
+            ),
+            nprocs=WORLD_SIZE,
+            join=True,
+        )
 
-    result = result_queue.get()
-    print(f"Shape: {shape}, time: {result}")
+        result = result_queue.get()
+        print(f"Shape: {shape}, time: {result}")
 
-    torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
