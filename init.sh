@@ -9,10 +9,10 @@
 export VLLM_USE_PRECOMPILED=1
 
 # Download vLLM binaries
-pip download --no-deps --only-binary :all: --dest . vllm
-unzip vllm-0.5.4-cp38-abi3-manylinux1_x86_64.whl vllm/_C.abi3.so -d vllm_binaries
-unzip vllm-0.5.4-cp38-abi3-manylinux1_x86_64.whl vllm/_core_C.abi3.so -d vllm_binaries
-unzip vllm-0.5.4-cp38-abi3-manylinux1_x86_64.whl vllm/_moe_C.abi3.so -d vllm_binaries
+pip download --no-deps --only-binary :all: --dest vllm_wheel vllm
+unzip vllm_wheel/* vllm/_C.abi3.so -d vllm_binaries
+unzip vllm_wheel/* vllm/_core_C.abi3.so -d vllm_binaries
+unzip vllm_wheel/* vllm/_moe_C.abi3.so -d vllm_binaries
 
 # Sync submodules
 git submodule update --init --remote
@@ -25,6 +25,15 @@ cd vllm
 pip install -e .
 cd ..
 
+# Mase submodule
+cd mase
+git checkout research/alpa-light
+pip install -e .
+cd ..
+
+# Editable install for ada
+pip install -e .
+
 # Cleanup torch and transformers installations and install nightly
 pip uninstall -y torch torchvision torchaudio transformers
 
@@ -33,12 +42,6 @@ pip install --pre torch torchvision torchaudio --index-url https://download.pyto
 
 echo "Installing transformers from source..."
 pip install git+https://github.com/huggingface/transformers
-
-# Mase submodule
-cd mase
-git checkout research/alpa-light
-pip install -e .
-cd ..
 
 # Setup models
 echo "Setting up models for experiments..."

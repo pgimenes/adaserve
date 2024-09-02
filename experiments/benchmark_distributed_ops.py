@@ -11,13 +11,12 @@ REPEAT = 100
 WARMUP_ITERS = 5
 OP = "allgather"
 
-DATA_SIZE = 1024
+DATA_SIZES = [4, 8, 16, 32, 64, 128]
+DATA_SIZES += list(range(256, 256 * 17, 256))
 
-SHAPES = [
-    [DATA_SIZE, 1536],
-    [DATA_SIZE, 4608],
-    [DATA_SIZE, 6144],
-]
+HIDDEN_SIZES = []
+for num_heads in [24, 40, 48, 80, 120]:
+    HIDDEN_SIZES += [num_heads * 64, num_heads * 64 * 3, num_heads * 64 * 4]
 
 
 def test_op(
@@ -90,23 +89,28 @@ if __name__ == "__main__":
     except RuntimeError:
         pass  # In case it's already set
 
-    for shape in SHAPES:
-        result_queue = Queue()
-        mp.spawn(
-            test_op,
-            args=(
-                result_queue,
-                shape,
-            ),
-            nprocs=WORLD_SIZE,
-            join=True,
-        )
+    for hidden_size in HIDDEN_SIZES:
+        for data_size in DATA_SIZES:
+            print(
+                f"Running benchmark for data_size: {data_size}, hidden_size: {hidden_size}"
+            )
+            shape = [data_size, hidden_size]
+            result_queue = Queue()
+            mp.spawn(
+                test_op,
+                args=(
+                    result_queue,
+                    shape,
+                ),
+                nprocs=WORLD_SIZE,
+                join=True,
+            )
 
-        result = result_queue.get()
-        print(f"Shape: {shape}, time: {result}")
+            result = result_queue.get()
+            # print(f"Shape: {shape}, time: {result}")
 
-        # dump to csv file
-        with open("benchmark_distributed_ops.csv", "a") as f:
-            f.write(f"{shape}, {result}\n")
+            # dump to csv file
+            with open(f"benchmark_distributed_ops_{OP}.csv", "a") as f:
+                f.write(f"{data_size}, {hidden_size}, {result}\n")
 
-        torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
