@@ -9,12 +9,14 @@ from torch.multiprocessing import Queue, set_start_method
 WORLD_SIZE = 8
 REPEAT = 100
 WARMUP_ITERS = 5
-OP = "allreduce"
+OP = "allgather"
+
+DATA_SIZE = 1024
 
 SHAPES = [
-    [8, 1536],
-    [8, 4608],
-    [8, 6144],
+    [DATA_SIZE, 1536],
+    [DATA_SIZE, 4608],
+    [DATA_SIZE, 6144],
 ]
 
 
@@ -102,5 +104,9 @@ if __name__ == "__main__":
 
         result = result_queue.get()
         print(f"Shape: {shape}, time: {result}")
+
+        # dump to csv file
+        with open("benchmark_distributed_ops.csv", "a") as f:
+            f.write(f"{shape}, {result}\n")
 
         torch.cuda.empty_cache()
