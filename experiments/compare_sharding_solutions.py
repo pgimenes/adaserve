@@ -1,16 +1,24 @@
 import dill
+from tabulate import tabulate
 
-value1 = 4
-value2 = 4096
+value1 = 1152
+
+sharding_config = {}
+for layer in range(96):
+    sharding_config[f"transformer.h.{layer}.ln_1"] = "replicated"
+    sharding_config[f"transformer.h.{layer}.attn.c_attn"] = "column"
+    sharding_config[f"transformer.h.{layer}.attn.attn"] = "head"
+    sharding_config[f"transformer.h.{layer}.attn.c_proj"] = "row"
+    sharding_config[f"transformer.h.{layer}.res_1"] = "replicated"
+    sharding_config[f"transformer.h.{layer}.ln_2"] = "replicated"
+    sharding_config[f"transformer.h.{layer}.mlp.c_fc"] = "column"
+    sharding_config[f"transformer.h.{layer}.mlp.c_proj"] = "row"
+    sharding_config[f"transformer.h.{layer}.res_2"] = "replicated"
+    sharding_config[f"transformer.ln_f"] = "replicated"
+
 
 with open (f"sharding_config_data_size_{value1}.dill", "rb") as f:
     data1 = dill.load(f)
 
-with open (f"sharding_config_data_size_{value2}.dill", "rb") as f:
-    data2 = dill.load(f)
-
-# use tabulate
-from tabulate import tabulate
-
 # print combined table. col0: keys, col1: data1, col2: data2
-print(tabulate([(k, data1[k], data2[k]) for k in data1.keys()], headers=["Keys", f"Data Size {value1}", f"Data Size {value2}"], tablefmt="grid"))
+print(tabulate([(k, sharding_config[k], data1[k]) for k in data1.keys()], headers=["Keys", f"Megatron-LM", f"Data Size {value1}"], tablefmt="grid"))

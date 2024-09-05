@@ -1,4 +1,4 @@
-export CHECKPOINT=$ADASERVE_CHECKPOINTS_PATH/nice-gpt2-4b
+export CHECKPOINT=$ADASERVE_CHECKPOINTS_PATH/nice-gpt2-30.1b
 export TENSOR_PARALLEL=$(nvidia-smi --list-gpus | wc -l)
 export BATCH_SIZE=32
 export SEQUENCE_LENGTH=128

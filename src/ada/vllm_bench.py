@@ -26,12 +26,6 @@ def evaluate(args):
 
     # sharding config
     sharding_config = {}
-    for layer in range(48):
-        sharding_config[f"transformer.h.{layer}.attn.c_attn"] = "replicated"
-        sharding_config[f"transformer.h.{layer}.attn.attn"] = "replicated"
-        sharding_config[f"transformer.h.{layer}.attn.c_proj"] = "replicated"
-        sharding_config[f"transformer.h.{layer}.mlp.c_fc"] = "replicated"
-        sharding_config[f"transformer.h.{layer}.mlp.c_proj"] = "replicated"
 
     # Load model
     if args.tensor_parallel > 1:
@@ -65,7 +59,7 @@ def evaluate(args):
         seed=args.seed,
         temperature=1.0,
         top_p=1.0,
-        max_tokens=10,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
+        max_tokens=1,  # for some reason it seems to act strangely when token < 4, need to double check how to get max_tokens = 1 to work
         detokenize=False,
     )
 
