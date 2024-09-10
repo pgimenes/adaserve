@@ -7,7 +7,7 @@
 2. Run the init.sh script to install the nightly versions of PyTorch and Transformers and initialize the mase submodule.
 
 ```bash
-source init.sh
+source scripts/init.sh
 ```
 
 3. Verify the setup by running the CLI.

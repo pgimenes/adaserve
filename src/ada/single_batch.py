@@ -6,12 +6,27 @@ import time
 import subprocess
 
 # define logger
+from viztracer import VizTracer
 import logging
 
 logger = logging.getLogger("vllm_bench")
 logging.basicConfig(level=logging.INFO)
 
-from viztracer import VizTracer
+
+def get_rdma_perf_counter(nic_name):
+    # get rdma performance counter
+    command = [
+        "ethtool",
+        "-S",
+        nic_name
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    # find the line with rx_vport_rdma_unicast_bytes
+    output = result.stdout.split("\n")
+    output = [line for line in output if "rx_vport_rdma_unicast_bytes" in line][0]
+    bytes = int(output.split(":")[1].strip())
+    Gbytes = bytes / 1024 / 1024 / 1024
+    return Gbytes
 
 
 def evaluate(args):
@@ -61,8 +76,6 @@ def evaluate(args):
             trust_remote_code=True,
             dtype=torch.float32,
             load_format="mase",
-            enable_dynamic_resharding=False,
-            sharding_config=decode_sharding,
             prefill_sharding=prefill_sharding,
             decode_sharding=decode_sharding,
         )
@@ -92,19 +105,25 @@ def evaluate(args):
     )
 
     elapsed_times = []
+    used_bw_gbs = []
 
     for itr in range(args.repeat):
         logger.info(f"Running iteration: {itr}")
+        start_gb = get_rdma_perf_counter(args.nic_name)
         start_time = time.time()
         _ = model.generate(
             prompts=prompts,
             sampling_params=sampling_params,
         )
         end_time = time.time()
+        end_gb = get_rdma_perf_counter(args.nic_name)
         elapsed_times.append(end_time - start_time)
+        used_bw_gbs.append((end_gb - start_gb)/(end_time - start_time))
+        
         logger.info(f"Time taken: {end_time - start_time}s")
 
     elapsed_time = sum(elapsed_times[2:]) / len(elapsed_times[2:])
+    average_bw_gbs = sum(used_bw_gbs) / len(used_bw_gbs)
     tps = (args.batch_size * args.input_sequence_length) / elapsed_time
 
     print(
@@ -117,80 +136,13 @@ def evaluate(args):
             tps,
         )
     )
+    print("average rdma bandwidth: {} GB/s".format(average_bw_gbs))
 
     return elapsed_time, tps
 
 
-def sweep_runner(args):
-    model_sizes = args.sweep_model_size_range
-    input_sequence_lengths = args.sweep_sequence_length_range
-    batch_sizes = args.sweep_batch_size_range
-    tp_sizes = args.sweep_tp_range
-
-    grid = [
-        (model_size, input_sequence_length, batch_size, tp_size)
-        for model_size in model_sizes
-        for input_sequence_length in input_sequence_lengths
-        for batch_size in batch_sizes
-        for tp_size in tp_sizes
-    ]
-
-    for idx, grid_point in enumerate(grid):
-        model_size, input_sequence_length, batch_size, tp_size = grid_point
-
-        logger.info(f"{idx}/{len(grid)}: Running grid point: {grid_point}")
-
-        # Launch the evaluation as a subprocess
-        command = [
-            "python",
-            "src/vllm_bench.py",
-            "--model_name",
-            f"{args.sweep_model}-{model_size}",
-            "--input_sequence_length",
-            str(input_sequence_length),
-            "--batch_size",
-            str(batch_size),
-            "--tensor_parallel",
-            str(tp_size),
-        ]
-
-        log_filename = f"experiments/benchmarking/sweep_{args.sweep_model.replace('/', '-')}-{model_size.replace('.', '_')}_bs_{batch_size}_seq_len_{input_sequence_length}_tp_{tp_size}.log"
-
-        try:
-            with open(log_filename, "w") as file:
-                _ = subprocess.run(
-                    command,
-                    check=True,
-                    stdout=file,
-                    stderr=subprocess.STDOUT,
-                )
-
-            # Extract solution
-            with open(log_filename, "r") as file:
-                lines = file.readlines()
-                for line in lines:
-                    if "[EVALUATION FINISHED]:" in line:
-                        elapsed_time = float(line.split()[-3].replace(",", ""))
-                        tps = float(line.split()[-1].replace(",", ""))
-
-            # Write to csv
-            with open("experiments/benchmarking/sweep_results.csv", "a") as file:
-                file.write(
-                    f"{args.sweep_model}-{model_size},{input_sequence_length},{batch_size},{tp_size},{elapsed_time},{tps}\n"
-                )
-
-        except Exception as e:
-            logger.warning(f"Error running command: {command}")
-            logger.warning(f"Error: {e}")
-
-
 def main(args):
-
-    if args.sweep:
-        sweep_runner(args)
-
-    else:
-        evaluate(args)
+    evaluate(args)
 
 
 def cli():
@@ -214,6 +166,11 @@ def cli():
         type=int,
         default=42,
     )
+    parser.add_argument(
+        "--nic_name",
+        type=str,
+        default="enp195s0f0np0"
+        )
 
     # Evaluation parameters
     parser.add_argument(
@@ -228,37 +185,6 @@ def cli():
     parser.add_argument(
         "--batch_size",
         type=int,
-    )
-
-    # Sweep arguments
-    parser.add_argument(
-        "--sweep",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-sweep_model",
-        type=str,
-        default="facebook/opt",
-    )
-    parser.add_argument(
-        "-sweep_model_size_range",
-        type=list,
-        default=["1.3b", "2.7b", "6.7b", "13b", "30b", "66b"],
-    )
-    parser.add_argument(
-        "--sweep_sequence_length_range",
-        type=list,
-        default=[128, 256, 512, 1024],
-    )
-    parser.add_argument(
-        "--sweep_batch_size_range",
-        type=list,
-        default=range(100, 1100, 100),
-    )
-    parser.add_argument(
-        "--sweep_tp_range",
-        type=list,
-        default=[1, 2, 4, 8],
     )
 
     return parser.parse_args()

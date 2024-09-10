@@ -20,7 +20,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "ada=ada.main:main",
+            "ada=ada.main:entry_point",
         ],
     },
 )
