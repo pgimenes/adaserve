@@ -124,15 +124,39 @@ def process_all(model, dataset, args):
                 dataset[int(o.request_id)].finish_timestamp = (
                     o.metrics.finished_time - base_time
                 )
-                # print(o)
-                # print(dataset[int(o.request_id)])
-                # print(time.time() - base_time)
+                dataset[int(o.request_id)].jct = dataset[int(o.request_id)].finish_timestamp - dataset[int(o.request_id)].receive_timestamp
 
         if not (engine.has_unfinished_requests() or engine_requests):
             break
 
     return dataset
 
+# sharding config
+prefill_sharding = {}
+for layer in range(24):
+    prefill_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
+    prefill_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
+    prefill_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
+    prefill_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
+    prefill_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
+    prefill_sharding[f"transformer.h.{layer}.ln_2"] = "data"
+    prefill_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "data"
+    prefill_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "data"
+    prefill_sharding[f"transformer.h.{layer}.res_2"] = "data"
+    prefill_sharding[f"transformer.ln_f"] = "replicated"
+
+decode_sharding = {}
+for layer in range(96):
+    decode_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
+    decode_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
+    decode_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
+    decode_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
+    decode_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
+    decode_sharding[f"transformer.h.{layer}.ln_2"] = "replicated"
+    decode_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "column"
+    decode_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "row"
+    decode_sharding[f"transformer.h.{layer}.res_2"] = "replicated"
+    decode_sharding[f"transformer.ln_f"] = "replicated"
 
 def load_model(args) -> LLM:
     # Load model
@@ -149,6 +173,11 @@ def load_model(args) -> LLM:
             enforce_eager=True,
             trust_remote_code=True,
             dtype=dtype,
+            load_format="mase", # enable Mase model optimizations when loading the model
+            enable_dynamic_resharding=True, # enable dynamic resharding
+            sharding_config=prefill_sharding,
+            prefill_sharding=prefill_sharding,
+            decode_sharding=decode_sharding,
         )
     else:
         model = LLM(
@@ -169,6 +198,12 @@ def evaluate(args):
     dataset = process_all(model, dataset, args)
 
     dump_results(dataset, args.output_path)
+
+    jct = 0
+    for request in dataset:
+        jct += request.jct
+    jct /= len(dataset)
+    logger.info(f"Average JCT: {jct}")
 
 
 def main(args):

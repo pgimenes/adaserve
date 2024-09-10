@@ -25,7 +25,31 @@ def evaluate(args):
         os.environ["HF_HOME"] = args.huggingface_cache
 
     # sharding config
-    sharding_config = {}
+    prefill_sharding = {}
+    for layer in range(96):
+        prefill_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
+        prefill_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
+        prefill_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
+        prefill_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
+        prefill_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
+        prefill_sharding[f"transformer.h.{layer}.ln_2"] = "data"
+        prefill_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "data"
+        prefill_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "data"
+        prefill_sharding[f"transformer.h.{layer}.res_2"] = "data"
+        prefill_sharding[f"transformer.ln_f"] = "replicated"
+
+    decode_sharding = {}
+    for layer in range(96):
+        decode_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
+        decode_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
+        decode_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
+        decode_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
+        decode_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
+        decode_sharding[f"transformer.h.{layer}.ln_2"] = "replicated"
+        decode_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "column"
+        decode_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "row"
+        decode_sharding[f"transformer.h.{layer}.res_2"] = "replicated"
+        decode_sharding[f"transformer.ln_f"] = "replicated"
 
     # Load model
     if args.tensor_parallel > 1:
@@ -36,7 +60,11 @@ def evaluate(args):
             enforce_eager=True,
             trust_remote_code=True,
             dtype=torch.float32,
-            sharding_config=sharding_config,
+            load_format="mase",
+            enable_dynamic_resharding=False,
+            sharding_config=decode_sharding,
+            prefill_sharding=prefill_sharding,
+            decode_sharding=decode_sharding,
         )
     else:
         model = LLM(
