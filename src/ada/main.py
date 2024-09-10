@@ -12,11 +12,10 @@ from vllm.inputs import TokensPrompt
 from ada.cli import get_cli_args
 
 logger = logging.getLogger("adaserve")
-logging.basicConfig(level=logging.INFO)
 
 DATASET_DICT = {
-    "azure_conv": "src/ada/datasets/AzureLLMInferenceTrace_conv_parsed.csv",
-    "azure_code": "src/ada/datasets/AzureLLMInferenceTrace_code_parsed.csv",
+    "azure_conv": "datasets/AzureLLMInferenceTrace_conv_parsed.csv",
+    "azure_code": "datasets/AzureLLMInferenceTrace_code_parsed.csv",
 }
 
 @dataclass
@@ -27,6 +26,7 @@ class Request:
     response_tokens: int
     finish_timestamp: float = 0.0
     actual_response_tokens: int = 0
+    jct: int = None
 
     @classmethod
     def from_csv_row(cls, row):
@@ -38,9 +38,9 @@ class Request:
         )
 
 
-def load_dataset(dataset):
+def load_dataset(args):
     
-    path = DATASET_DICT[dataset]
+    path = DATASET_DICT[args.dataset]
 
     dataset = []
     with open(path, "r") as f:
@@ -51,7 +51,7 @@ def load_dataset(dataset):
     return dataset
 
 
-def dump_results(dataset, out_name):
+def dump_results(dataset, out_name, args):
     with open(f"{out_name}.csv", "w") as f:
         csv_writer = csv.writer(f)
         csv_writer.writerow(
@@ -79,7 +79,7 @@ def dump_results(dataset, out_name):
             )
 
     jct = 0
-    for request in dataset:
+    for request in dataset[:args.max_requests]:
         jct += request.jct
     jct /= len(dataset)
     logger.info(f"Average JCT: {jct}")
@@ -101,7 +101,7 @@ def process_all(model, dataset, args):
 
     engine_requests = []
 
-    for request in dataset:
+    for request in dataset[:args.max_requests]:
         request = dataset[id]
         tokens = to_tokens(request.context_tokens, tokenizer)
         sampling_params = SamplingParams(
@@ -221,6 +221,11 @@ def main(args):
 
     _setup_env(args)
 
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
     # Set output path
     if args.output_path is None:
         path = "out/resharding" if args.dynamic_resharding else "out/baseline"
@@ -228,11 +233,14 @@ def main(args):
         args.output_path = path
     logger.info(f"Output path: {args.output_path}")
 
+    # Set max reqs
+    args.max_requests = 1000000 if args.max_requests is None else args.max_requests
+
     model = load_model(args)
-    dataset = load_dataset(args.dataset)
+    dataset = load_dataset(args)
     dataset = process_all(model, dataset, args)
 
-    dump_results(dataset, args.output_path)
+    dump_results(dataset, args.output_path, args)
 
 def entry_point():
     args = get_cli_args()

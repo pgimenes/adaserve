@@ -59,6 +59,12 @@ def get_cli_args():
         type=str,
         default="azure_conv",
     )
+    dataset_group.add_argument(
+        "--max_requests",
+        type=int,
+        default=None,
+        help="Maximum number of requests to process in the dataset",
+    )
 
     # Output configuration
     # --------------------------------------------
