@@ -10,6 +10,7 @@ from vllm import LLM, SamplingParams
 from vllm.inputs import TokensPrompt
 
 from ada.cli import get_cli_args
+from ada.sharding import get_sharding_configs
 
 logger = logging.getLogger("adaserve")
 
@@ -27,6 +28,7 @@ class Request:
     finish_timestamp: float = 0.0
     actual_response_tokens: int = 0
     jct: int = None
+    ttft: int = None
 
     @classmethod
     def from_csv_row(cls, row):
@@ -52,6 +54,9 @@ def load_dataset(args):
 
 
 def dump_results(dataset, out_name, args):
+    ds = dataset[:args.max_requests]
+    
+    
     with open(f"{out_name}.csv", "w") as f:
         csv_writer = csv.writer(f)
         csv_writer.writerow(
@@ -63,9 +68,10 @@ def dump_results(dataset, out_name, args):
                 "finish_timestamp",
                 "actual_response_tokens",
                 "jct",
+                "ttft",
             ]
         )
-        for request in dataset:
+        for request in ds:
             csv_writer.writerow(
                 [
                     request.id,
@@ -75,14 +81,19 @@ def dump_results(dataset, out_name, args):
                     request.finish_timestamp,
                     request.actual_response_tokens,
                     request.jct,
+                    request.ttft,
                 ]
             )
 
     jct = 0
-    for request in dataset[:args.max_requests]:
+    ttft = 0
+    for request in ds:
         jct += request.jct
-    jct /= len(dataset)
+        ttft += request.ttft
+    jct /= len(ds)
+    ttft /= len(ds)
     logger.info(f"Average JCT: {jct}")
+    logger.info(f"Average TTFT: {ttft}")
 
 
 with open("experiments/prompt.txt", "r") as f:
@@ -107,7 +118,6 @@ def process_all(model, dataset, args):
         sampling_params = SamplingParams(
             max_tokens=request.response_tokens,
         )
-        logger.debug(f"Adding request {id}")
         engine_requests.append(
             (
                 id,
@@ -126,7 +136,7 @@ def process_all(model, dataset, args):
             cur_time = time.time()
             cur_td = cur_time - base_time
             if td <= cur_td:
-                logger.debug(f"Adding request {id} at {cur_td}, {td}")
+                logger.info(f"Adding request {id} at {cur_td}, {td}")
                 engine.add_request(str(id), tokens, sampling_params)
                 engine_requests.pop(0)
 
@@ -137,43 +147,24 @@ def process_all(model, dataset, args):
                     o.outputs[0].token_ids
                 )
                 dataset[int(o.request_id)].finish_timestamp = (
-                    o.metrics.finished_time - base_time
+                    o.metrics.finished_time - o.metrics.arrival_time
                 )
-                dataset[int(o.request_id)].jct = dataset[int(o.request_id)].finish_timestamp - dataset[int(o.request_id)].receive_timestamp
-
+                dataset[int(o.request_id)].jct = o.metrics.finished_time - o.metrics.arrival_time
+                try:
+                    dataset[int(o.request_id)].ttft = o.metrics.first_token_time - o.metrics.arrival_time
+                except:
+                    dataset[int(o.request_id)].ttft = None
+                
         if not (engine.has_unfinished_requests() or engine_requests):
             break
 
     return dataset
 
-# sharding config
-prefill_sharding = {}
-for layer in range(96):
-    prefill_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
-    prefill_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
-    prefill_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
-    prefill_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
-    prefill_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
-    prefill_sharding[f"transformer.h.{layer}.ln_2"] = "data"
-    prefill_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "data"
-    prefill_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "data"
-    prefill_sharding[f"transformer.h.{layer}.res_2"] = "data"
-    prefill_sharding[f"transformer.ln_f"] = "replicated"
-
-decode_sharding = {}
-for layer in range(96):
-    decode_sharding[f"transformer.h.{layer}.ln_1"] = "replicated"
-    decode_sharding[f"transformer.h.{layer}.attn.c_attn"] = "column"
-    decode_sharding[f"transformer.h.{layer}.attn.attn"] = "head"
-    decode_sharding[f"transformer.h.{layer}.attn.c_proj"] = "row"
-    decode_sharding[f"transformer.h.{layer}.res_1"] = "replicated"
-    decode_sharding[f"transformer.h.{layer}.ln_2"] = "replicated"
-    decode_sharding[f"transformer.h.{layer}.mlp.c_fc"] = "column"
-    decode_sharding[f"transformer.h.{layer}.mlp.c_proj"] = "row"
-    decode_sharding[f"transformer.h.{layer}.res_2"] = "replicated"
-    decode_sharding[f"transformer.ln_f"] = "replicated"
 
 def load_model(args) -> LLM:
+
+    prefill_sharding, decode_sharding = get_sharding_configs(args)
+
     # Load model
     dtype = torch.float32
     if args.datatype == "float16":
@@ -188,10 +179,11 @@ def load_model(args) -> LLM:
             enforce_eager=True,
             trust_remote_code=True,
             dtype=dtype,
-            load_format="mase", # enable Mase model optimizations when loading the model
+            load_format="mase",
             enable_dynamic_resharding=args.dynamic_resharding,
             prefill_sharding=prefill_sharding,
             decode_sharding=decode_sharding,
+            # disable_log_stats=False,
         )
     else:
         model = LLM(
@@ -216,15 +208,21 @@ def _setup_env(args):
         # ulimit -n 4096
 
 def main(args):
-    logger.info(f"Evaluating model: {args.model_name}")
-    logger.info(f"Tensor Parallel: {args.tensor_parallel}")
-
     _setup_env(args)
 
+    if os.environ.get("ADASERVE_DEBUG", None) is not None:
+        args.max_requests = 50
+        args.debug = True
+
     if args.debug:
+        logger.setLevel(logging.DEBUG)
         logging.basicConfig(level=logging.DEBUG)
     else:
+        logger.setLevel(logging.INFO)
         logging.basicConfig(level=logging.INFO)
+
+    logger.info(f"Evaluating model: {args.model_name}")
+    logger.info(f"Tensor Parallel: {args.tensor_parallel}")
 
     # Set output path
     if args.output_path is None:

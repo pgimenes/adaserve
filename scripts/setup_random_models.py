@@ -1,9 +1,13 @@
+import os
 import argparse
+
 from transformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
+from transformers.models.llama import LlamaConfig, LlamaForCausalLM
 from transformers import AutoTokenizer
+
 from accelerate import init_empty_weights
 
-def setup_models(args):
+def setup_gpt2_models(args):
     HEAD_SIZE = 64
     save_path = args.save_path
     tokenizer = AutoTokenizer.from_pretrained(f"openai-community/gpt2-xl")
@@ -58,6 +62,27 @@ def setup_models(args):
         model.save_pretrained(f"{save_path}/{checkpoints[idx]}")
         tokenizer.save_pretrained(f"{save_path}/{checkpoints[idx]}")
 
+def setup_llama_models(args):
+    save_path = args.save_path
+    
+    checkpoints = [
+        "meta-llama/Llama-2-7b-hf",
+        "meta-llama/Llama-2-70b-chat-hf",
+    ]
+
+    for checkpoint in checkpoints:
+        print(f"Checkpoint: {checkpoint}")
+        print(f"Loading tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+        tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
+        print(f"Loading model...")
+        config = LlamaConfig.from_pretrained(checkpoint)
+        config.max_position_embeddings = 16384
+        model = LlamaForCausalLM(config)
+        params = sum(p.numel() for p in model.parameters())
+        print(f"params: {params:,}")
+        model.save_pretrained(f"{save_path}/{checkpoint}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -66,11 +91,15 @@ if __name__ == "__main__":
     action_group = parser.add_argument_group("Action (running mode)")
     action_group.add_argument(
         "--save_path",
-        default="/mnt/data",
+        default=None,
         type=str,
         help="Run autosharding on a single design point, defined by batch size and sequence length.",
     )
 
     args = parser.parse_args()
 
-    setup_models(args)
+    if args.save_path is None:
+        args.save_path = os.environ["ADASERVE_CHECKPOINTS_PATH"]
+
+    setup_gpt2_models(args)
+    setup_llama_models(args)
