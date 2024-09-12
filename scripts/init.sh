@@ -4,7 +4,7 @@
 # Check if ADASERVE_CHECKPOINTS_PATH is set
 if [ -z "$ADASERVE_CHECKPOINTS_PATH" ]; then
     echo "Error: ADASERVE_CHECKPOINTS_PATH is not set. Please set this environment variable before running the script." >&2
-    exit 1
+    return 1
 fi
 
 export VLLM_USE_PRECOMPILED=1
@@ -31,4 +31,4 @@ pip install -e .
 
 # Setup models
 echo "Setting up models for experiments..."
-python scripts/setup_gpt2_models.py --save_path $ADASERVE_CHECKPOINTS_PATH
+python scripts/setup_random_models.py --save_path $ADASERVE_CHECKPOINTS_PATH

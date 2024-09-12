@@ -1,0 +1,5 @@
+name: adaserve
+
+dependencies:
+  - python=3.11.9
+  - pip

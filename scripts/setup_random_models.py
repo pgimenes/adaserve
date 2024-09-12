@@ -14,11 +14,11 @@ def setup_gpt2_models(args):
 
     checkpoints = [
         "nice-gpt2-1.5b",
-        "nice-gpt2-4b",
-        "nice-gpt2-5.7b",
-        "nice-gpt2-11.2b",
-        "nice-gpt2-30.1b",
-        "nice-gpt2-68.8b",
+        # "nice-gpt2-4b",
+        # "nice-gpt2-5.7b",
+        # "nice-gpt2-11.2b",
+        # "nice-gpt2-30.1b",
+        # "nice-gpt2-68.8b",
     ]
     configs = []
 
@@ -45,8 +45,9 @@ def setup_gpt2_models(args):
         configs.append(config)
 
 
-    for idx, config in enumerate(configs):
-        print(f"Checkpoint: {checkpoints[idx]}")
+    for idx, checkpoint in enumerate(checkpoints):
+        config = configs[idx]
+        print(f"Checkpoint: {checkpoint}")
         print(
             f"num heads: {config.n_head}, num layers: {config.n_layer}, emb size: {config.n_embd}"
         )
@@ -59,21 +60,22 @@ def setup_gpt2_models(args):
         params = sum(p.numel() for p in model.parameters())
         print(f"params: {params:,}")
 
-        model.save_pretrained(f"{save_path}/{checkpoints[idx]}")
-        tokenizer.save_pretrained(f"{save_path}/{checkpoints[idx]}")
+        model.save_pretrained(f"{save_path}/{checkpoint}")
+        tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
 
 def setup_llama_models(args):
     save_path = args.save_path
     
     checkpoints = [
-        "meta-llama/Llama-2-7b-hf",
-        "meta-llama/Llama-2-70b-chat-hf",
+        "unsloth/Meta-Llama-3.1-8B-Instruct",
+        "huggyllama/llama-30b",
+        "unsloth/Meta-Llama-3.1-70B-Instruct",
     ]
 
     for checkpoint in checkpoints:
         print(f"Checkpoint: {checkpoint}")
         print(f"Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
         print(f"Loading model...")
         config = LlamaConfig.from_pretrained(checkpoint)
@@ -82,6 +84,7 @@ def setup_llama_models(args):
         params = sum(p.numel() for p in model.parameters())
         print(f"params: {params:,}")
         model.save_pretrained(f"{save_path}/{checkpoint}")
+        tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
