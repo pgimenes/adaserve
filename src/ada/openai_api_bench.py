@@ -7,7 +7,6 @@ Caveat: all request prompt had to be pre-generated due to prompt length calcualt
 
 """
 
-import argparse
 import logging
 import time
 import asyncio
@@ -15,7 +14,6 @@ import aiohttp
 from transformers import AutoTokenizer
 import csv
 from tqdm import tqdm
-from openai import AsyncOpenAI
 import re
 
 
@@ -24,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger.formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 LOG_INTERVAL = 1
-DATASET_PATH = "datasets/AzureLLMInferenceTrace_conv_parsed.csv"
+DATASET_PATH = "datasets/AzureLLMInferenceTrace_code_parsed.csv"
 PROMPT_PATH = "experiments/prompt.txt"
 HOST_URL = "http://localhost:8000"
 API_KEY = "test"
@@ -157,23 +155,9 @@ async def main():
     END_TIME = time.time()
     ELAPSED = END_TIME - START_TIME
 
-    # Get prompt and decode throughput
-    url = f"{HOST_URL}/metrics"
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(url)        
-        resp = await response.text()
-
-        # Get prompt throughput
-        pattern = re.compile(r'vllm:prompt_tokens_total{model_name=".*"} (\d+.\d+)')
-        total_prompt_tokens = pattern.findall(resp)
-        total_prompt_tokens = float(total_prompt_tokens[0])
-        prompt_throughput = total_prompt_tokens / ELAPSED
-        
-        # Get gen throughput
-        pattern = re.compile(r'vllm:generation_tokens_total{model_name=".*"} (\d+.\d+)')
-        total_gen_tokens = pattern.findall(resp)
-        total_gen_tokens = float(total_gen_tokens[0])
-        gen_throughput = total_gen_tokens / ELAPSED
+    # Calculate throughput
+    prompt_throughput = sum([input_token_length for _, _, input_token_length, _ in data]) / ELAPSED
+    gen_throughput = sum([output_token_length for _, _, _, output_token_length in data]) / ELAPSED
 
     # Dump the response time to csv file
     logger.info("All requests finished, dumping response times to csv file")
@@ -193,6 +177,7 @@ async def main():
     ttft_avg = sum(TTFT_LIST) / len(TTFT_LIST)
     tbt_avg = sum(TBT_LIST) / len(TBT_LIST)
 
+    logger.info(f"Total elapsed time: {ELAPSED}")
     logger.info(f"Average JCT: {jct_avg}")
     logger.info(f"Average TTFT: {ttft_avg}")
     logger.info(f"Average TBT: {tbt_avg}")
