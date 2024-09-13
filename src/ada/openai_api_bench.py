@@ -128,7 +128,8 @@ async def send_request(session, index, timestamp, input_prompt, output_token_len
 
         # Usually this equals output_token_length + 2 due to role chunk at the beginning and DONE chunk at the end
         # Sometimes this equals output_token_length + 1 when the role chunk is merged with the first content chunk
-        assert len(collected_chunks) >= output_token_length, f"Expected {output_token_length} tokens, got {len(collected_chunks)}"
+        # Sometimes it's less when many tokens are merged into one chunk
+        # assert len(collected_chunks) >= output_token_length, f"Expected {output_token_length} tokens, got {len(collected_chunks)}"
 
     logger.info(f"Finished request {index} with JCT: {jct}, TTFT: {ttft}, TBT: {tbt}")
 
