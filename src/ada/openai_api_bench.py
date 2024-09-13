@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 logger.formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-LOG_INTERVAL = 1000
+LOG_INTERVAL = 1
 DATASET_PATH = "datasets/AzureLLMInferenceTrace_conv_parsed.csv"
 PROMPT_PATH = "experiments/prompt.txt"
 HOST_URL = "http://localhost:8000"
@@ -31,8 +31,16 @@ API_KEY = "test"
 MODEL = "/home/pedrogimenes/huggingface/unsloth/Meta-Llama-3.1-8B-Instruct"
 openai_request_headers = {
     "Content-Type": "application/json",
+    "Authorization": f"Bearer {API_KEY}",
 }
 MAX_REQUESTS = 100000
+timeout = aiohttp.ClientTimeout(
+    total=60*60*24,
+    connect=60*60*24,
+    sock_read=60*60*24,
+    sock_connect=60*60*24,
+    ceil_threshold=60*60*24,
+)
 
 # preload the tokenizer with auto tokenizer and preload the place holder prompt
 tokenizer = AutoTokenizer.from_pretrained(MODEL)
@@ -75,12 +83,11 @@ def generate_fixed_length_input(token_length, prompt):
     return fixed_length_prompt
 
 
-async def send_request(client, index, timestamp, input_prompt, output_token_length):
+async def send_request(session, index, timestamp, input_prompt, output_token_length):
     await asyncio.sleep(timestamp)  # Wait until the precise timestamp
     
     if index % LOG_INTERVAL == 0:
-        logger.info(f"Processing request {index}")
-    start_time = time.time()
+        logger.debug(f"Processing request {index}")
     
     payload = {
         "model": MODEL,
@@ -95,29 +102,35 @@ async def send_request(client, index, timestamp, input_prompt, output_token_leng
         "stream": True,
     }
 
-    response = await client.chat.completions.create(**payload)
+    url = HOST_URL + "/v1/chat/completions"
+    headers = openai_request_headers
+    start_time = time.time()
+    async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
 
-    collected_chunks = []
-    chunk_times = []
-    async for chunk in response:
-        chunk_time = time.time() - start_time  # calculate the time delay of the chunk
-        chunk_times.append(chunk_time)
-        collected_chunks.append(chunk)  # save the event response
+        collected_chunks = []
+        chunk_times = []
+        async for chunk in response.content.iter_any():
+            chunk_time = time.time() - start_time  # calculate the time delay of the chunk
+            chunk_times.append(chunk_time)
+            collected_chunks.append(chunk)  # save the event response
 
-    jct = chunk_times[-1]  # job completion time
-    ttft = chunk_times[0]  # time to first token
-    
-    
-    tbts = []
-    for i in range(1, len(chunk_times)):
-        tbts.append(chunk_times[i] - chunk_times[i - 1])
-    tbt = sum(tbts) / len(tbts)  # time between tokens
+        tbts = []
+        for i in range(1, len(chunk_times)):
+            tbts.append(chunk_times[i] - chunk_times[i - 1])
+        
+        jct = chunk_times[-1]  # job completion time
+        ttft = chunk_times[0]
+        tbt = sum(tbts) / len(tbts)  # time between tokens
 
-    JCT_LIST[index] = jct
-    TTFT_LIST[index] = ttft
-    TBT_LIST[index] = tbt
+        JCT_LIST[index] = jct
+        TTFT_LIST[index] = ttft
+        TBT_LIST[index] = tbt
 
-    assert len(collected_chunks) == output_token_length + 1
+        # Usually this equals output_token_length + 2 due to role chunk at the beginning and DONE chunk at the end
+        # Sometimes this equals output_token_length + 1 when the role chunk is merged with the first content chunk
+        assert len(collected_chunks) >= output_token_length, f"Expected {output_token_length} tokens, got {len(collected_chunks)}"
+
+    logger.info(f"Finished request {index} with JCT: {jct}, TTFT: {ttft}, TBT: {tbt}")
 
 async def main():
     logger.info("Starting the benchmark")
@@ -128,39 +141,38 @@ async def main():
         fixed_length_prompt = generate_fixed_length_input(input_token_length, prompt)
         fixed_length_prompts.append(fixed_length_prompt)
     logger.info("Preprocessed all requests")
-    
-    # Create the client
-    client = AsyncOpenAI(
-        api_key=API_KEY,
-        base_url=f"{HOST_URL}/v1",
-    )
 
     # Send requests
     logger.info("Sending requests")
-    tasks = []
-    for index, timestamp, input_token_length, output_token_length in data:
-        task = send_request(client, index, timestamp, fixed_length_prompts[index], output_token_length)
-        tasks.append(task)
+    START_TIME = time.time()
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = []
+        for index, timestamp, input_token_length, output_token_length in data:
+            task = send_request(session, index, timestamp, fixed_length_prompts[index], output_token_length)
+            tasks.append(task)
     
-    # Wait for all requests to finish
-    await asyncio.gather(*tasks)
+        # Wait for all requests to finish
+        await asyncio.gather(*tasks)
+    END_TIME = time.time()
+    ELAPSED = END_TIME - START_TIME
 
     # Get prompt and decode throughput
     url = f"{HOST_URL}/metrics"
     async with aiohttp.ClientSession() as session:
-        response = await session.get(url)
-        
-        # get dict
+        response = await session.get(url)        
         resp = await response.text()
 
-        # regex for: vllm:avg_prompt_throughput_toks_per_s{model_name="..."} <THROUGHPUT>
-        pattern = re.compile(r'vllm:avg_prompt_throughput_toks_per_s{model_name=".*"} (\d+.\d+)')
-        prompt_throughput = pattern.findall(resp)
-        prompt_throughput = float(prompt_throughput[0])
+        # Get prompt throughput
+        pattern = re.compile(r'vllm:prompt_tokens_total{model_name=".*"} (\d+.\d+)')
+        total_prompt_tokens = pattern.findall(resp)
+        total_prompt_tokens = float(total_prompt_tokens[0])
+        prompt_throughput = total_prompt_tokens / ELAPSED
         
-        pattern = re.compile(r'vllm:avg_generation_throughput_toks_per_s{model_name=".*"} (\d+.\d+)')
-        gen_throughput = pattern.findall(resp)
-        gen_throughput = float(gen_throughput[0])
+        # Get gen throughput
+        pattern = re.compile(r'vllm:generation_tokens_total{model_name=".*"} (\d+.\d+)')
+        total_gen_tokens = pattern.findall(resp)
+        total_gen_tokens = float(total_gen_tokens[0])
+        gen_throughput = total_gen_tokens / ELAPSED
 
     # Dump the response time to csv file
     logger.info("All requests finished, dumping response times to csv file")
