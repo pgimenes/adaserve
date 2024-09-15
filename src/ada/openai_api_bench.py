@@ -22,11 +22,13 @@ logging.basicConfig(level=logging.INFO)
 logger.formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 LOG_INTERVAL = 1
-DATASET_PATH = "datasets/AzureLLMInferenceTrace_code_parsed.csv"
+DATASET_PATH = "datasets/AzureLLMInferenceTrace_conv_parsed.csv"
 PROMPT_PATH = "experiments/prompt.txt"
 HOST_URL = "http://localhost:8000"
 API_KEY = "test"
 MODEL = "/home/pedrogimenes/huggingface/unsloth/Meta-Llama-3.1-8B-Instruct"
+# MODEL = "/home/pedrogimenes/huggingface/google/gemma-2-2b-it"
+# MODEL = "/home/pedrogimenes/huggingface/google/gemma-2-9b-it"
 openai_request_headers = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {API_KEY}",
@@ -82,54 +84,76 @@ def generate_fixed_length_input(token_length, prompt):
 
 
 async def send_request(session, index, timestamp, input_prompt, output_token_length):
-    await asyncio.sleep(timestamp)  # Wait until the precise timestamp
-    
-    if index % LOG_INTERVAL == 0:
-        logger.debug(f"Processing request {index}")
-    
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": input_prompt,
+    attempt = 0
+    max_tries = 5
+    while True:
+        try:
+            # Only wait for the right timestamp on the first attempt
+            if attempt == 0:
+                await asyncio.sleep(timestamp)  # Wait until the precise timestamp
+            
+            if index % LOG_INTERVAL == 0:
+                logger.debug(f"Processing request {index}")
+            
+            payload = {
+                "model": MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": input_prompt,
+                    }
+                ],
+                "max_tokens": output_token_length,
+                "temperature": 0.0,
+                "stream": True,
             }
-        ],
-        "max_tokens": output_token_length,
-        "temperature": 0.0,
-        "stream": True,
-    }
 
-    url = HOST_URL + "/v1/chat/completions"
-    headers = openai_request_headers
-    start_time = time.time()
-    async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+            url = HOST_URL + "/v1/chat/completions"
+            headers = openai_request_headers
+            start_time = time.time()
+            async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
 
-        collected_chunks = []
-        chunk_times = []
-        async for chunk in response.content.iter_any():
-            chunk_time = time.time() - start_time  # calculate the time delay of the chunk
-            chunk_times.append(chunk_time)
-            collected_chunks.append(chunk)  # save the event response
+                collected_chunks = []
+                chunk_times = []
+                async for chunk in response.content.iter_any():
+                    chunk_time = time.time() - start_time  # calculate the time delay of the chunk
+                    chunk_times.append(chunk_time)
+                    collected_chunks.append(chunk)  # save the event response
 
-        tbts = []
-        for i in range(1, len(chunk_times)):
-            tbts.append(chunk_times[i] - chunk_times[i - 1])
-        
-        jct = chunk_times[-1]  # job completion time
-        ttft = chunk_times[0]
-        tbt = sum(tbts) / len(tbts)  # time between tokens
+                tbts = []
+                for i in range(1, len(chunk_times)):
+                    tbts.append(chunk_times[i] - chunk_times[i - 1])
+                
+                jct = chunk_times[-1]  # job completion time
+                ttft = chunk_times[0]
 
-        JCT_LIST[index] = jct
-        TTFT_LIST[index] = ttft
-        TBT_LIST[index] = tbt
+                if len(collected_chunks) == 1:
+                    tbt = 0
+                    logger.warning(f"Request {index} returned only one chunk although output length should be {output_token_length}.")
+                else:
+                    tbt = sum(tbts) / len(tbts)  # time between tokens
+                
 
-        # Usually this equals output_token_length + 2 due to role chunk at the beginning and DONE chunk at the end
-        # Sometimes this equals output_token_length + 1 when the role chunk is merged with the first content chunk
-        # Sometimes it's less when many tokens are merged into one chunk
-        # assert len(collected_chunks) >= output_token_length, f"Expected {output_token_length} tokens, got {len(collected_chunks)}"
+                JCT_LIST[index] = jct
+                TTFT_LIST[index] = ttft
+                TBT_LIST[index] = tbt
 
-    logger.info(f"Finished request {index} with JCT: {jct}, TTFT: {ttft}, TBT: {tbt}")
+                # Usually this equals output_token_length + 2 due to role chunk at the beginning and DONE chunk at the end
+                # Sometimes this equals output_token_length + 1 when the role chunk is merged with the first content chunk
+                # Sometimes it's less when many tokens are merged into one chunk
+                # assert len(collected_chunks) >= output_token_length, f"Expected {output_token_length} tokens, got {len(collected_chunks)}"
+
+            logger.info(f"Finished request {index} with JCT: {jct}, TTFT: {ttft}, TBT: {tbt}")
+            break
+        except Exception as e:
+            logger.error(f"Error in request {index}. Attempt: {attempt+1}/{max_tries}. Error: {e}")
+
+            if attempt >= max_tries:
+                logger.error(f"Failed to send request {index} after {max_tries} attempts. Skipping request.")
+                break
+            else:
+                # Try again...
+                attempt += 1
 
 async def main():
     logger.info("Starting the benchmark")

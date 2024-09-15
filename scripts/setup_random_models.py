@@ -3,7 +3,7 @@ import argparse
 
 from transformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
 from transformers.models.llama import LlamaConfig, LlamaForCausalLM
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 
 from accelerate import init_empty_weights
 
@@ -70,21 +70,29 @@ def setup_llama_models(args):
         "unsloth/Meta-Llama-3.1-8B-Instruct",
         "huggyllama/llama-30b",
         "unsloth/Meta-Llama-3.1-70B-Instruct",
+        "google/gemma-2-2b-it",
+        "google/gemma-2-9b-it",
+        "google/gemma-2-27b-it",
     ]
 
     for checkpoint in checkpoints:
         print(f"Checkpoint: {checkpoint}")
+        
         print(f"Loading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
+        
         print(f"Loading model...")
-        config = LlamaConfig.from_pretrained(checkpoint)
+        config = AutoConfig.from_pretrained(checkpoint)
         config.max_position_embeddings = 16384
-        model = LlamaForCausalLM(config)
+        config.model_max_length = 16384
+        config.sliding_window = 16384
+        model = AutoModelForCausalLM.from_config(config)
+        model.save_pretrained(f"{save_path}/{checkpoint}") 
+        
         params = sum(p.numel() for p in model.parameters())
         print(f"params: {params:,}")
-        model.save_pretrained(f"{save_path}/{checkpoint}")
-        tokenizer.save_pretrained(f"{save_path}/{checkpoint}")
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -104,5 +112,5 @@ if __name__ == "__main__":
     if args.save_path is None:
         args.save_path = os.environ["ADASERVE_CHECKPOINTS_PATH"]
 
-    setup_gpt2_models(args)
+    # setup_gpt2_models(args)
     setup_llama_models(args)
