@@ -26,14 +26,17 @@ DATASET_PATH = "datasets/AzureLLMInferenceTrace_conv_parsed.csv"
 PROMPT_PATH = "experiments/prompt.txt"
 HOST_URL = "http://localhost:8000"
 API_KEY = "test"
-MODEL = "/home/pedrogimenes/huggingface/unsloth/Meta-Llama-3.1-8B-Instruct"
+MODEL = "/data/huggingface/unsloth/Meta-Llama-3.1-8B-Instruct/"
 # MODEL = "/home/pedrogimenes/huggingface/google/gemma-2-2b-it"
 # MODEL = "/home/pedrogimenes/huggingface/google/gemma-2-9b-it"
 openai_request_headers = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {API_KEY}",
 }
-MAX_REQUESTS = 100000
+MAX_REQUESTS = 100
+# TIMESTAMP_OVERRIDES = [
+#     10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+# ]
 timeout = aiohttp.ClientTimeout(
     total=60*60*24,
     connect=60*60*24,
@@ -92,8 +95,7 @@ async def send_request(session, index, timestamp, input_prompt, output_token_len
             if attempt == 0:
                 await asyncio.sleep(timestamp)  # Wait until the precise timestamp
             
-            if index % LOG_INTERVAL == 0:
-                logger.debug(f"Processing request {index}")
+            logger.info(f"Processing request {index}, timestamp {timestamp}")
             
             payload = {
                 "model": MODEL,
@@ -161,6 +163,7 @@ async def main():
     # Preprocess all the request with fixed length prompt with tqdm
     fixed_length_prompts = []
     for index, timestamp, input_token_length, output_token_length in tqdm(data):
+        
         fixed_length_prompt = generate_fixed_length_input(input_token_length, prompt)
         fixed_length_prompts.append(fixed_length_prompt)
     logger.info("Preprocessed all requests")
@@ -171,6 +174,7 @@ async def main():
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = []
         for index, timestamp, input_token_length, output_token_length in data:
+            # timestamp = TIMESTAMP_OVERRIDES[index]
             task = send_request(session, index, timestamp, fixed_length_prompts[index], output_token_length)
             tasks.append(task)
     
@@ -208,6 +212,7 @@ async def main():
 
     logger.info(f"Prompt Throughput: {prompt_throughput}")
     logger.info(f"Generation Throughput: {gen_throughput}")
+    logger.info(f"CSV Row: {jct_avg}, {ttft_avg}, {tbt_avg}, {prompt_throughput}, {gen_throughput}")
     
 # Run the main function
 asyncio.run(main())

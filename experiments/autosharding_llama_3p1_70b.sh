@@ -1,5 +1,5 @@
-export CHECKPOINT=/data/pedrogimenes/meta-llama/Meta-Llama-3.1-70B-Instruct/
-export TENSOR_PARALLEL=8
+export CHECKPOINT=/data/huggingface/unsloth/Meta-Llama-3.1-8B-Instruct/
+export TENSOR_PARALLEL=4
 
 vllm serve \
     $CHECKPOINT \
@@ -7,5 +7,5 @@ vllm serve \
     --load_format mase \
     --tensor_parallel_size $TENSOR_PARALLEL \
     --enforce_eager \
-    --num-parallel-layers 0 \
+    --num-parallel-layers 32 \
     --dtype float16
